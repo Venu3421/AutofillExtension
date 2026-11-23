@@ -1,0 +1,31 @@
+{
+  "name": "pilgrim-quickfill-for-ttd",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Privacy-first, zero-telemetry Chrome extension to securely store pilgrim details and rapidly fill official TTD booking forms.",
+  "scripts": {
+    "dev": "node scripts/build.js --watch",
+    "build": "tsc && node scripts/build.js && node scripts/generate-icons.js && node scripts/copy-manifest.js",
+    "test": "vitest run",
+    "zip": "node scripts/package-zip.js"
+  },
+  "keywords": [
+    "chrome-extension",
+    "manifest-v3",
+    "ttd",
+    "tirupati",
+    "autofill",
+    "privacy"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/chrome": "^0.0.268",
+    "@types/node": "^22.10.1",
+    "archiver": "^7.0.1",
+    "happy-dom": "^21.0.4",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.1",
+    "vitest": "^2.1.8"
+  }
+}

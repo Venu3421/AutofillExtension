@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pilgrim QuickFill for TTD</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- First-Run PII Consent Modal -->
+  <div id="consent-modal" class="modal-overlay hidden">
+    <div class="modal-card">
+      <div class="modal-icon">🔒</div>
+      <h2>Local-Only Privacy Disclosure</h2>
+      <p>
+        <strong>Pilgrim QuickFill for TTD</strong> is strictly an on-device personal helper.
+      </p>
+      <div class="modal-body">
+        <ul>
+          <li><strong>Zero Telemetry:</strong> No remote servers, trackers, or network calls are ever made.</li>
+          <li><strong>Encrypted Storage:</strong> All pilgrim details (Name, Aadhaar, Passport, Contact) are stored locally on this device only using AES-GCM 256-bit encryption.</li>
+          <li><strong>Payment Protection:</strong> This extension NEVER interacts with, reads, or automates payment screens or CAPTCHAs.</li>
+          <li><strong>Independent Tool:</strong> Not affiliated with or endorsed by Tirumala Tirupati Devasthanams (TTD).</li>
+        </ul>
+      </div>
+      <button id="btn-accept-consent" class="btn-primary full-width">
+        I Understand & Accept
+      </button>
+    </div>
+  </div>
+
+  <div id="app" class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="brand">
+        <span class="brand-icon">⚡</span>
+        <div>
+          <h1 class="brand-title">Pilgrim QuickFill</h1>
+          <span class="brand-subtitle">TTD Booking Assistant</span>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="badge-ist" id="clock-ist">--:--:-- IST</span>
+        <button id="btn-theme-toggle" class="btn-icon" title="Toggle Theme">🌓</button>
+      </div>
+    </header>
+
+    <!-- Top Readiness Banner -->
+    <div id="readiness-banner" class="readiness-banner">
+      <div class="readiness-status" id="readiness-title">Checking readiness...</div>
+      <div class="readiness-details" id="readiness-errors"></div>
+    </div>
+
+    <!-- Profile Selector & Presets -->
+    <section class="section-profile">
+      <div class="profile-row">
+        <label for="select-profile" class="sr-only">Profile:</label>
+        <select id="select-profile" class="select-field flex-grow"></select>
+        <button id="btn-add-profile" class="btn-sec" title="New Profile">+ New</button>
+        <button id="btn-delete-profile" class="btn-icon danger" title="Delete Profile">🗑️</button>
+      </div>
+      <div class="preset-row">
+        <span class="label-tiny">Preset:</span>
+        <select id="select-preset" class="select-tiny">
+          <option value="sed300">₹300 Special Entry Darshan (Max 6)</option>
+          <option value="srivani">SRIVANI Break Darshan (Max 4, Type Assist)</option>
+          <option value="arjitha">Arjitha Seva / Dip (Max 2)</option>
+          <option value="accommodation">Accommodation (Min 2 occupants)</option>
+          <option value="srivari_seva">Srivari Seva Volunteer</option>
+          <option value="homam">Sri Srinivasa Divyanugraha Homam</option>
+        </select>
+      </div>
+    </section>
+
+    <!-- Tabs Navigation -->
+    <nav class="tabs-nav">
+      <button class="tab-btn active" data-tab="tab-pilgrims">Pilgrims (<span id="pilgrim-count-badge">0</span>)</button>
+      <button class="tab-btn" data-tab="tab-general">Contact</button>
+      <button class="tab-btn" data-tab="tab-seva" id="tab-btn-seva">Srivari Seva</button>
+      <button class="tab-btn" data-tab="tab-quick-copy">Quick Copy</button>
+      <button class="tab-btn" data-tab="tab-settings">Settings</button>
+    </nav>
+
+    <!-- Tab 1: Pilgrims List -->
+    <div id="tab-pilgrims" class="tab-content active">
+      <div class="pilgrims-header">
+        <span class="helper-text">Select pilgrims included for this booking (up to 6):</span>
+        <button id="btn-add-pilgrim" class="btn-sec small">+ Add Pilgrim</button>
+      </div>
+      <div id="pilgrims-container" class="pilgrims-container"></div>
+    </div>
+
+    <!-- Tab 2: General / Contact Details -->
+    <div id="tab-general" class="tab-content">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="input-email">Email (for receipts) *</label>
+          <input type="email" id="input-email" placeholder="devotee@example.com">
+        </div>
+        <div class="form-group">
+          <label for="input-general-gothram">Gothram (Family / Seva Booking) *</label>
+          <input type="text" id="input-general-gothram" placeholder="Kasyapa">
+        </div>
+        <div class="form-group">
+          <label for="input-mobile">Mobile Number (10 digits) *</label>
+          <input type="tel" id="input-mobile" placeholder="9876543210" maxlength="15">
+        </div>
+        <div class="form-group">
+          <label for="input-country">Country</label>
+          <input type="text" id="input-country" value="India">
+        </div>
+        <div class="form-group">
+          <label for="input-state">State</label>
+          <input type="text" id="input-state" placeholder="Andhra Pradesh">
+        </div>
+        <div class="form-group">
+          <label for="input-city">City / Town</label>
+          <input type="text" id="input-city" placeholder="Tirupati">
+        </div>
+        <div class="form-group">
+          <label for="input-pincode">Pincode (6 digits)</label>
+          <input type="text" id="input-pincode" placeholder="517504" maxlength="6">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 3: Srivari Seva Tab -->
+    <div id="tab-seva" class="tab-content">
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="input-profession">Profession / Occupation</label>
+          <input type="text" id="input-profession" placeholder="e.g. Software Engineer, Teacher">
+        </div>
+        <div class="form-group">
+          <label for="input-education">Education Qualification</label>
+          <input type="text" id="input-education" placeholder="e.g. B.Tech, Graduate">
+        </div>
+        <div class="form-group">
+          <label for="input-languages">Languages Known</label>
+          <input type="text" id="input-languages" placeholder="e.g. Telugu, English, Hindi, Tamil">
+        </div>
+        <div class="form-group">
+          <label for="input-volunteer-exp">Previous Seva Experience</label>
+          <input type="text" id="input-volunteer-exp" placeholder="e.g. General Seva 2024">
+        </div>
+        <div class="form-group">
+          <label for="input-location">Preferred Location</label>
+          <input type="text" id="input-location" placeholder="Tirumala / Tirupati">
+        </div>
+        <div class="form-group">
+          <label for="input-frequency">Preferred Frequency</label>
+          <input type="text" id="input-frequency" placeholder="Once a year / Monthly">
+        </div>
+      </div>
+    </div>
+
+    <!-- Tab 4: Quick Copy Fallback -->
+    <div id="tab-quick-copy" class="tab-content">
+      <p class="helper-text">One-tap copy fallback in case of strict portal blocks:</p>
+      <div id="quick-copy-container" class="quick-copy-list"></div>
+    </div>
+
+    <!-- Tab 5: Settings, Mappings & Encrypted Backup -->
+    <div id="tab-settings" class="tab-content">
+      <div class="settings-group">
+        <h3>Booking Automation</h3>
+        <label class="checkbox-label">
+          <input type="checkbox" id="check-fill-continue">
+          <span>Enable "Fill & Safe Continue" (Auto-clicks Continue only if 0 errors; never touches payment)</span>
+        </label>
+        <label class="checkbox-label">
+          <input type="checkbox" id="check-focus-captcha">
+          <span>Auto-focus CAPTCHA box after autofill</span>
+        </label>
+        <div class="form-group inline" style="margin-top: 8px;">
+          <label for="input-target-time">Quota Drop Target Time (IST):</label>
+          <input type="text" id="input-target-time" placeholder="10:00:00" style="width: 100px;">
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Custom Field Mappings</h3>
+        <p class="helper-text">Reset custom mappings if field detection is misbehaving, or export them to share:</p>
+        <div class="btn-row">
+          <button id="btn-export-selectors-settings" class="btn-sec flex-grow">
+            📤 Export Selectors (JSON)
+          </button>
+          <button id="btn-clear-mappings-settings" class="btn-sec flex-grow" style="color: #b91c1c; border-color: #fca5a5;">
+            🗑️ Reset / Clear Mappings
+          </button>
+        </div>
+      </div>
+
+      <div class="settings-group">
+        <h3>Encrypted Backup & Restore</h3>
+        <p class="helper-text">Export or import password-protected AES-GCM backups of your profiles:</p>
+        <div class="btn-row">
+          <button id="btn-export-backup" class="btn-sec flex-grow">🔒 Export Backup</button>
+          <button id="btn-import-backup" class="btn-sec flex-grow">🔓 Import Backup</button>
+          <input type="file" id="file-import-backup" accept=".json" style="display: none;">
+        </div>
+      </div>
+
+      <div class="settings-group danger-zone">
+        <h3>Danger Zone</h3>
+        <button id="btn-wipe-data" class="btn-danger full-width">⚠️ Wipe All Local Data</button>
+      </div>
+    </div>
+
+    <!-- Footer Disclaimer -->
+    <footer class="app-footer">
+      <div class="disclaimer-text">
+        🔒 Encrypted & Stored Locally on this Device Only. Zero Telemetry.
+      </div>
+      <div class="affiliation-text">
+        Independent helper tool. Not affiliated with or endorsed by Tirumala Tirupati Devasthanams (TTD).
+      </div>
+    </footer>
+  </div>
+
+  <script type="module" src="popup.ts"></script>
+</body>
+</html>

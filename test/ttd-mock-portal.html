@@ -1,0 +1,690 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TTD Mock Portal — Pilgrim QuickFill Offline Test Harness</title>
+  <style>
+    :root {
+      --ttd-gold: #c2410c;
+      --ttd-blue: #1e3a8a;
+      --ttd-bg: #fffbeb;
+      --border: #fed7aa;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: var(--ttd-bg);
+      color: #334155;
+      margin: 0;
+      padding: 20px;
+    }
+    .header {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+      margin-bottom: 20px;
+    }
+    .header h1 {
+      margin: 0;
+      color: var(--ttd-gold);
+      font-size: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .scenario-tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .scenario-tab {
+      background: white;
+      border: 1px solid #cbd5e1;
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 13px;
+      cursor: pointer;
+      color: #475569;
+      transition: all 0.2s;
+    }
+    .scenario-tab.active {
+      background: var(--ttd-gold);
+      color: white;
+      border-color: var(--ttd-gold);
+      box-shadow: 0 2px 4px rgba(194, 65, 12, 0.2);
+    }
+    .tab-panel {
+      display: none;
+      background: white;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    .tab-panel.active {
+      display: block;
+    }
+    .scenario-desc {
+      background: #f8fafc;
+      border-left: 4px solid var(--ttd-gold);
+      padding: 12px 16px;
+      border-radius: 0 8px 8px 0;
+      font-size: 13px;
+      margin-bottom: 20px;
+      line-height: 1.5;
+    }
+    .form-section {
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .form-section h3 {
+      font-size: 15px;
+      color: var(--ttd-blue);
+      margin-top: 0;
+      margin-bottom: 14px;
+    }
+    .pilgrim-card {
+      background: #fafaf9;
+      border: 1px solid #e7e5e4;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .pilgrim-card h4 {
+      margin: 0 0 12px 0;
+      font-size: 13px;
+      color: #44403c;
+    }
+    .form-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px;
+    }
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    label {
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+    }
+    input, select {
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid #cbd5e1;
+      font-size: 13px;
+      transition: all 0.2s;
+    }
+    input:focus, select:focus {
+      outline: 2px solid var(--ttd-gold);
+      border-color: transparent;
+    }
+    .is-invalid {
+      border-color: #ef4444 !important;
+      background: #fef2f2;
+    }
+    .captcha-box {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .captcha-img {
+      background: #e2e8f0;
+      font-family: monospace;
+      font-weight: 800;
+      letter-spacing: 4px;
+      font-size: 18px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      user-select: none;
+      color: #1e293b;
+      border: 1px dashed #94a3b8;
+    }
+    .btn-submit {
+      background: #16a34a;
+      color: white;
+      border: none;
+      padding: 12px 28px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 2px 4px rgba(22, 163, 74, 0.2);
+    }
+    .btn-submit:disabled {
+      background: #cbd5e1;
+      cursor: not-allowed;
+      box-shadow: none;
+    }
+    .badge-test {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 11px;
+      font-weight: 600;
+      background: #e0f2fe;
+      color: #0369a1;
+      margin-left: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <h1>
+      <span>🛕 TTD Portal Offline Simulator</span>
+      <span class="badge-test">Local Test Harness</span>
+    </h1>
+    <div style="font-size: 12px; color: #64748b;">
+      Pilgrim QuickFill Extension Testing & Verification Suite
+    </div>
+  </div>
+
+  <!-- Scenario Navigation Tabs -->
+  <div class="scenario-tabs">
+    <button class="scenario-tab active" data-tab="tab-sed">
+      1. ₹300 Special Entry Darshan (SED)
+    </button>
+    <button class="scenario-tab" data-tab="tab-hostile">
+      2. Hostile Anti-Autofill Form
+    </button>
+    <button class="scenario-tab" data-tab="tab-srivani">
+      3. SRIVANI Break Darshan (Paste Blocked)
+    </button>
+    <button class="scenario-tab" data-tab="tab-seva">
+      4. Virtual Seva / Gruhastha Details (Live TTD Layout)
+    </button>
+  </div>
+
+  <!-- TAB 1: Special Entry Darshan -->
+  <div id="tab-sed" class="tab-panel active">
+    <div class="scenario-desc">
+      <strong>Scenario 1: ₹300 Special Entry Darshan (SED)</strong><br>
+      • Simulates standard TTD controlled booking forms with Country, State, City, Contact, and repeating Pilgrim cards.<br>
+      • <strong>Age</strong> field blocks pasting (`onpaste` prevented) to test Type Assist auto-switch.<br>
+      • <strong>Gender</strong> and <strong>ID Proof Type</strong> selects update automatically.<br>
+      • Toggle below tests the <strong>Ticket Count Mismatch Guard</strong> (e.g. 4 ticket slots on TTD vs 2 pilgrims in extension).<br>
+      • Has CAPTCHA input to verify automatic scrolling & cursor focus (user types CAPTCHA manually per security rules).
+    </div>
+
+    <div style="margin-bottom: 16px;">
+      <label style="font-weight: 700; color: #1e3a8a;">Number of Ticket Slots:</label>
+      <button type="button" id="btn-toggle-slots" style="padding: 6px 12px; border-radius: 6px; cursor: pointer; margin-left: 8px;">
+        Switch to 4 Tickets
+      </button>
+    </div>
+
+    <!-- General Details -->
+    <div class="form-section">
+      <h3>Contact Information</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="sed-country">Country *</label>
+          <select id="sed-country" name="country">
+            <option value="India">India</option>
+            <option value="United States">United States</option>
+            <option value="United Kingdom">United Kingdom</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sed-state">State *</label>
+          <select id="sed-state" name="state">
+            <option value="">Select State</option>
+            <option value="Andhra Pradesh">Andhra Pradesh</option>
+            <option value="Karnataka">Karnataka</option>
+            <option value="Tamil Nadu">Tamil Nadu</option>
+            <option value="Telangana">Telangana</option>
+            <option value="Maharashtra">Maharashtra</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="sed-city">City / Town *</label>
+          <input type="text" id="sed-city" name="city" placeholder="Enter city">
+        </div>
+        <div class="form-group">
+          <label for="sed-pincode">Pin Code *</label>
+          <input type="text" id="sed-pincode" name="pincode" placeholder="6 digits" maxlength="6">
+        </div>
+        <div class="form-group">
+          <label for="sed-email">Email Address *</label>
+          <input type="email" id="sed-email" name="email" placeholder="devotee@example.com">
+        </div>
+        <div class="form-group">
+          <label for="sed-mobile">Mobile Number *</label>
+          <input type="tel" id="sed-mobile" name="mobile" placeholder="10 digits">
+        </div>
+      </div>
+    </div>
+
+    <!-- Pilgrim Rows Container -->
+    <div class="form-section">
+      <h3>Pilgrim Details</h3>
+      <div id="sed-pilgrim-rows">
+        <!-- Rendered by JS below -->
+      </div>
+    </div>
+
+    <!-- CAPTCHA Section -->
+    <div class="form-section">
+      <h3>Verification</h3>
+      <div class="captcha-box">
+        <div class="captcha-img" id="sed-captcha-display">TTD9X</div>
+        <div class="form-group">
+          <label for="sed-captcha-input">Enter Security Code * (Type manually)</label>
+          <input type="text" id="sed-captcha-input" name="captcha" placeholder="Type characters" style="width: 180px;">
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align: right;">
+      <button type="button" class="btn-submit" id="sed-continue-btn" disabled>
+        Continue & Review
+      </button>
+    </div>
+  </div>
+
+  <!-- TAB 2: Hostile Anti-Autofill Form -->
+  <div id="tab-hostile" class="tab-panel">
+    <div class="scenario-desc">
+      <strong>Scenario 2: Hostile Anti-Autofill Form</strong><br>
+      • Intentionally clears inputs after 50ms if set programmatically without user keystroke simulation.<br>
+      • Demonstrates the <strong>Post-Fill Audit Engine</strong>: it detects cleared fields, flags them in red in the floating panel, and lets you complete them cleanly via <strong>"📋 Finish via Quick Paste"</strong> or <strong>"⌨️ Type Assist"</strong>!
+    </div>
+
+    <div class="form-section">
+      <h3>Devotee Details (Anti-Autofill Protected)</h3>
+      <div class="pilgrim-card pilgrim-row" data-pilgrim-index="0">
+        <h4>Devotee 1</h4>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="hostile-name">Devotee Full Name *</label>
+            <input type="text" id="hostile-name" name="devotee_name" class="hostile-input" placeholder="Full name">
+          </div>
+          <div class="form-group">
+            <label for="hostile-age">Age *</label>
+            <input type="number" id="hostile-age" name="devotee_age" class="hostile-input" placeholder="Age" min="0" max="120">
+          </div>
+          <div class="form-group">
+            <label for="hostile-gender">Gender *</label>
+            <select id="hostile-gender" name="devotee_gender">
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="hostile-id-type">Photo ID Type *</label>
+            <select id="hostile-id-type" name="id_type">
+              <option value="Aadhaar">Aadhaar</option>
+              <option value="Passport">Passport</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="hostile-id-num">Photo ID Number *</label>
+            <input type="text" id="hostile-id-num" name="id_number" class="hostile-input" placeholder="ID Number">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align: right;">
+      <button type="button" class="btn-submit" id="hostile-continue-btn" disabled>
+        Continue & Review (Hostile Form)
+      </button>
+    </div>
+  </div>
+
+  <!-- TAB 3: SRIVANI Break Darshan Form -->
+  <div id="tab-srivani" class="tab-panel">
+    <div class="scenario-desc">
+      <strong>Scenario 3: SRIVANI Trust Break Darshan (Paste Blocked)</strong><br>
+      • Strict portal mode where <strong>ALL paste events are blocked</strong> with `e.preventDefault()`.<br>
+      • Designed for <strong>Tier 3 (Type Assist)</strong>: large high-contrast display card, 4-4-4 Aadhaar chunking (`XXXX XXXX XXXX`), live typo alerts, and millisecond auto-advance upon full match.
+    </div>
+
+    <div class="form-section">
+      <h3>SRIVANI Donor & Pilgrim Information</h3>
+      <div class="pilgrim-card pilgrim-row" data-pilgrim-index="0">
+        <h4>Pilgrim 1 (Strict No-Paste Mode)</h4>
+        <div class="form-grid">
+          <div class="form-group">
+            <label for="srivani-name">Full Name *</label>
+            <input type="text" id="srivani-name" name="pilgrim_name" class="no-paste" placeholder="Name">
+          </div>
+          <div class="form-group">
+            <label for="srivani-age">Age *</label>
+            <input type="number" id="srivani-age" name="pilgrim_age" class="no-paste" placeholder="Age" min="0" max="120">
+          </div>
+          <div class="form-group">
+            <label for="srivani-gender">Gender *</label>
+            <select id="srivani-gender" name="pilgrim_gender">
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="srivani-id-type">ID Proof *</label>
+            <select id="srivani-id-type" name="pilgrim_id_type">
+              <option value="Aadhaar">Aadhaar</option>
+              <option value="Passport">Passport</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="srivani-id-num">12-Digit Aadhaar / ID *</label>
+            <input type="text" id="srivani-id-num" name="pilgrim_id_no" class="no-paste" placeholder="12 digits" maxlength="12">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align: right;">
+      <button type="button" class="btn-submit" id="srivani-continue-btn" disabled>
+        Continue & Review (SRIVANI)
+      </button>
+    </div>
+  </div>
+
+  <!-- TAB 4: Virtual Seva / Gruhastha Details (Exact TTD Live Portal Replica) -->
+  <div id="tab-seva" class="tab-panel">
+    <div class="scenario-desc">
+      <strong>Scenario 4: Virtual Seva / Gruhastha Details (Live TTD Portal Replica)</strong><br>
+      • Matches the exact layout of <code>ttdevasthanams.ap.gov.in/virtual-seva/pilgrim-details</code> (e.g. Laksha Kumkumarchana Seva).<br>
+      • <strong>General Details:</strong> Gothram, Email Address, City, State, Country, Pincode.<br>
+      • <strong>Gruhastha Details:</strong> 2 Devotee rows (Gruhastha Couple) each with Name, Age, Gender, Photo ID Proof, and Photo ID Number.
+    </div>
+
+    <!-- General Details -->
+    <div class="form-section">
+      <h3>General Details</h3>
+      <div class="form-grid">
+        <div class="form-group">
+          <label for="seva-gothram">Gothram *</label>
+          <input type="text" id="seva-gothram" name="pilgrimGothram" class="seva-input" placeholder="Gothram">
+        </div>
+        <div class="form-group">
+          <label for="seva-email">Email Address *</label>
+          <input type="email" id="seva-email" name="email" class="seva-input" placeholder="Email Address">
+        </div>
+        <div class="form-group">
+          <label for="seva-city">City *</label>
+          <input type="text" id="seva-city" name="city" class="seva-input" placeholder="City">
+        </div>
+        <div class="form-group">
+          <label for="seva-state">State *</label>
+          <input type="text" id="seva-state" name="state" class="seva-input" placeholder="State">
+        </div>
+        <div class="form-group">
+          <label for="seva-country">Country *</label>
+          <input type="text" id="seva-country" name="country" class="seva-input" placeholder="Country" value="India">
+        </div>
+        <div class="form-group">
+          <label for="seva-pincode">Pincode *</label>
+          <input type="text" id="seva-pincode" name="pincode" class="seva-input" placeholder="Pincode" maxlength="6">
+        </div>
+      </div>
+    </div>
+
+    <!-- Gruhastha Details -->
+    <div class="form-section">
+      <h3>Gruhastha Details</h3>
+
+      <!-- Devotee 1 -->
+      <div class="pilgrim-card" style="margin-bottom: 16px;">
+        <h4 style="margin: 0 0 10px 0; color: #1e3a8a;">Devotee 1</h4>
+        <div class="form-grid" style="margin-bottom: 12px;">
+          <div class="form-group">
+            <label for="seva-name-0">Name *</label>
+            <input type="text" id="seva-name-0" name="name" class="seva-input" placeholder="Name">
+          </div>
+          <div class="form-group">
+            <label for="seva-age-0">Age *</label>
+            <input type="number" id="seva-age-0" name="age" class="seva-input" placeholder="Age" min="0" max="120">
+          </div>
+          <div class="form-group">
+            <label for="seva-gender-0">Gender *</label>
+            <select id="seva-gender-0" name="gender" class="seva-input">
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="seva-idtype-0">Photo ID Proof *</label>
+            <select id="seva-idtype-0" name="photoIdProof" class="seva-input">
+              <option value="Aadhaar">Aadhaar</option>
+              <option value="Passport">Passport</option>
+              <option value="Voter ID">Voter ID</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="max-width: 320px;">
+          <label for="seva-idnum-0">Photo ID Number *</label>
+          <input type="text" id="seva-idnum-0" name="photoIdNumber" class="seva-input" placeholder="Photo ID Number">
+        </div>
+      </div>
+
+      <!-- Devotee 2 -->
+      <div class="pilgrim-card">
+        <h4 style="margin: 0 0 10px 0; color: #1e3a8a;">Devotee 2</h4>
+        <div class="form-grid" style="margin-bottom: 12px;">
+          <div class="form-group">
+            <label for="seva-name-1">Name *</label>
+            <input type="text" id="seva-name-1" name="name" class="seva-input" placeholder="Name">
+          </div>
+          <div class="form-group">
+            <label for="seva-age-1">Age *</label>
+            <input type="number" id="seva-age-1" name="age" class="seva-input" placeholder="Age" min="0" max="120">
+          </div>
+          <div class="form-group">
+            <label for="seva-gender-1">Gender *</label>
+            <select id="seva-gender-1" name="gender" class="seva-input">
+              <option value="Female">Female</option>
+              <option value="Male">Male</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="seva-idtype-1">Photo ID Proof *</label>
+            <select id="seva-idtype-1" name="photoIdProof" class="seva-input">
+              <option value="Aadhaar">Aadhaar</option>
+              <option value="Passport">Passport</option>
+              <option value="Voter ID">Voter ID</option>
+            </select>
+          </div>
+        </div>
+        <div class="form-group" style="max-width: 320px;">
+          <label for="seva-idnum-1">Photo ID Number *</label>
+          <input type="text" id="seva-idnum-1" name="photoIdNumber" class="seva-input" placeholder="Photo ID Number">
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align: right;">
+      <button type="button" class="btn-submit" id="seva-continue-btn" disabled>
+        Continue & Review (Virtual Seva)
+      </button>
+    </div>
+  </div>
+
+  <script>
+    // Scenario Tab Switching
+    document.querySelectorAll('.scenario-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.scenario-tab').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        tab.classList.add('active');
+        const activePanel = document.getElementById(tab.getAttribute('data-tab'));
+        if (activePanel) {
+          activePanel.classList.add('active');
+          // Dispatch custom event to trigger DOM rescan in extension immediately
+          document.dispatchEvent(new CustomEvent('ttd-tab-switched', { detail: tab.getAttribute('data-tab') }));
+        }
+      });
+    });
+
+    // --- Tab 1 Setup ---
+    let sedSlotCount = 2;
+    const sedContainer = document.getElementById('sed-pilgrim-rows');
+    const toggleSlotsBtn = document.getElementById('btn-toggle-slots');
+    const continueBtn = document.getElementById('sed-continue-btn');
+
+    function renderSedSlots() {
+      sedContainer.innerHTML = '';
+      for (let i = 0; i < sedSlotCount; i++) {
+        const row = document.createElement('div');
+        row.className = 'pilgrim-card pilgrim-row';
+        row.setAttribute('data-pilgrim-index', i);
+        row.innerHTML = `
+          <h4>Pilgrim ${i + 1}</h4>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="sed-name-${i}">Pilgrim Name *</label>
+              <input type="text" id="sed-name-${i}" name="pilgrim_${i}_name" placeholder="Full name on ID" class="sed-controlled">
+            </div>
+            <div class="form-group">
+              <label for="sed-age-${i}">Age * (Paste Blocked)</label>
+              <input type="number" id="sed-age-${i}" name="pilgrim_${i}_age" placeholder="Age" class="sed-controlled paste-blocked-age" min="0" max="120">
+            </div>
+            <div class="form-group">
+              <label for="sed-gender-${i}">Gender *</label>
+              <select id="sed-gender-${i}" name="pilgrim_${i}_gender" class="sed-controlled">
+                <option value="Male">Male</option>
+                <option value="Female">Female</option>
+                <option value="Transgender">Transgender</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="sed-id-type-${i}">Photo ID Proof *</label>
+              <select id="sed-id-type-${i}" name="pilgrim_${i}_id_type" class="sed-controlled">
+                <option value="Aadhaar">Aadhaar</option>
+                <option value="Passport">Passport</option>
+                <option value="Voter ID">Voter ID</option>
+                <option value="Driving License">Driving License</option>
+                <option value="PAN">PAN</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="sed-id-num-${i}">ID Card Number *</label>
+              <input type="text" id="sed-id-num-${i}" name="pilgrim_${i}_id_num" placeholder="ID Number" class="sed-controlled">
+            </div>
+          </div>
+        `;
+
+        // Block paste on Age field to test guided assist
+        const ageInput = row.querySelector('.paste-blocked-age');
+        ageInput.addEventListener('paste', (e) => {
+          e.preventDefault();
+          console.warn('[Mock Portal] Paste event intercepted on Age field!');
+        });
+
+        sedContainer.appendChild(row);
+      }
+      checkSedValidity();
+    }
+
+    renderSedSlots();
+
+    toggleSlotsBtn.addEventListener('click', () => {
+      sedSlotCount = sedSlotCount === 2 ? 4 : 2;
+      toggleSlotsBtn.textContent = sedSlotCount === 2 ? 'Switch to 4 Tickets' : 'Switch to 2 Tickets';
+      renderSedSlots();
+    });
+
+    function checkSedValidity() {
+      const inputs = Array.from(document.querySelectorAll('#tab-sed .sed-controlled'));
+      const allFilled = inputs.every(el => el.value && el.value.trim().length > 0);
+      continueBtn.disabled = !allFilled;
+    }
+
+    document.addEventListener('input', (e) => {
+      if (e.target.closest('#tab-sed')) checkSedValidity();
+      if (e.target.closest('#tab-hostile')) checkHostileValidity();
+      if (e.target.closest('#tab-srivani')) checkSrivaniValidity();
+      if (e.target.closest('#tab-seva')) checkSevaValidity();
+    });
+
+    document.addEventListener('change', (e) => {
+      if (e.target.closest('#tab-sed')) checkSedValidity();
+      if (e.target.closest('#tab-hostile')) checkHostileValidity();
+      if (e.target.closest('#tab-srivani')) checkSrivaniValidity();
+      if (e.target.closest('#tab-seva')) checkSevaValidity();
+    });
+
+    continueBtn.addEventListener('click', () => {
+      alert('🎉 Safe Continue Clicked! SED form validated successfully.');
+    });
+
+    // --- Tab 2: Hostile Anti-Autofill Setup ---
+    const hostileContinueBtn = document.getElementById('hostile-continue-btn');
+
+    document.querySelectorAll('.hostile-input').forEach(input => {
+      input.addEventListener('change', () => {
+        // Clear value after 50ms if set programmatically without user keystroke
+        if (!input.dataset.userTyped) {
+          setTimeout(() => {
+            input.value = '';
+            input.classList.add('is-invalid');
+            console.warn('[Mock Hostile Portal] Wiped programmatic fill on', input.id);
+            checkHostileValidity();
+          }, 50);
+        }
+      });
+      input.addEventListener('keydown', () => {
+        input.dataset.userTyped = 'true';
+        input.classList.remove('is-invalid');
+      });
+    });
+
+    function checkHostileValidity() {
+      const inputs = Array.from(document.querySelectorAll('#tab-hostile input, #tab-hostile select'));
+      const allFilled = inputs.every(el => el.value && el.value.trim().length > 0 && !el.classList.contains('is-invalid'));
+      if (hostileContinueBtn) hostileContinueBtn.disabled = !allFilled;
+    }
+
+    hostileContinueBtn.addEventListener('click', () => {
+      alert('🎉 Safe Continue Clicked! Hostile form verified via Quick Paste / Type Assist.');
+    });
+
+    // --- Tab 3: SRIVANI Strict Paste-Blocked Setup ---
+    const srivaniContinueBtn = document.getElementById('srivani-continue-btn');
+
+    document.querySelectorAll('.no-paste').forEach(input => {
+      input.addEventListener('paste', (e) => {
+        e.preventDefault();
+        console.warn('[Mock SRIVANI Portal] Paste blocked via e.preventDefault() on', input.id);
+      });
+    });
+
+    function checkSrivaniValidity() {
+      const inputs = Array.from(document.querySelectorAll('#tab-srivani input, #tab-srivani select'));
+      const allFilled = inputs.every(el => el.value && el.value.trim().length > 0);
+      if (srivaniContinueBtn) srivaniContinueBtn.disabled = !allFilled;
+    }
+
+    srivaniContinueBtn.addEventListener('click', () => {
+      alert('🎉 Safe Continue Clicked! SRIVANI form validated successfully.');
+    });
+
+    // --- Tab 4: Virtual Seva Setup ---
+    const sevaContinueBtn = document.getElementById('seva-continue-btn');
+
+    function checkSevaValidity() {
+      const inputs = Array.from(document.querySelectorAll('#tab-seva input, #tab-seva select'));
+      const allFilled = inputs.every(el => el.value && el.value.trim().length > 0);
+      if (sevaContinueBtn) sevaContinueBtn.disabled = !allFilled;
+    }
+
+    sevaContinueBtn?.addEventListener('click', () => {
+      alert('🎉 Safe Continue Clicked! Virtual Seva / Gruhastha Details verified successfully.');
+    });
+  </script>
+</body>
+</html>

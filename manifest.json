@@ -1,0 +1,68 @@
+{
+  "manifest_version": 3,
+  "name": "Pilgrim QuickFill for TTD",
+  "version": "1.0.0",
+  "description": "Secure local-only autofill helper for TTD pilgrim bookings. Fast, encrypted, zero telemetry.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "src/popup/index.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "background": {
+    "service_worker": "background/service-worker.js",
+    "type": "module"
+  },
+  "permissions": [
+    "storage",
+    "clipboardWrite"
+  ],
+  "host_permissions": [
+    "*://ttdevasthanams.ap.gov.in/*",
+    "*://*.ttdevasthanams.ap.gov.in/*",
+    "*://tirupatibalaji.ap.gov.in/*",
+    "*://*.tirupatibalaji.ap.gov.in/*",
+    "*://ttdsevaonline.com/*",
+    "*://*.ttdsevaonline.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://ttdevasthanams.ap.gov.in/*",
+        "*://*.ttdevasthanams.ap.gov.in/*",
+        "*://tirupatibalaji.ap.gov.in/*",
+        "*://*.tirupatibalaji.ap.gov.in/*",
+        "*://ttdsevaonline.com/*",
+        "*://*.ttdsevaonline.com/*",
+        "*://localhost/*",
+        "*://127.0.0.1/*",
+        "file://*/*mock-portal.html*"
+      ],
+      "all_frames": true,
+      "match_about_blank": true,
+      "js": ["content/index.js"],
+      "run_at": "document_end"
+    }
+  ],
+  "commands": {
+    "fill_all": {
+      "suggested_key": {
+        "default": "Alt+A"
+      },
+      "description": "Fill all pilgrim details"
+    },
+    "fill_and_continue": {
+      "suggested_key": {
+        "default": "Alt+S"
+      },
+      "description": "Fill all & continue if valid"
+    }
+  }
+}
