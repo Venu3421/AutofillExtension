@@ -4,7 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import { scanForm } from '../src/content/field-detector';
 import { executeTier1Autofill, setNativeInputValue, setNativeSelectValue } from '../src/content/fill-engine';
-import { createDefaultProfile } from '../src/models/schema';
+import { createDefaultProfile, createDefaultPilgrim } from '../src/models/schema';
 
 describe('DOM Field Detection & Autofill Integration', () => {
   let profile = createDefaultProfile('Family');
@@ -516,6 +516,131 @@ describe('DOM Field Detection & Autofill Integration', () => {
     expect(name1.value).toBe('Onteddu Adithya Vardhan Reddy');
     expect(idnum0.value).toBe('456789012345');
     expect(idnum1.value).toBe('567890123456');
+
+    container.remove();
+  });
+
+  it('correctly matches "Aadhaar Card" to "Aadhaar" in audit and autofills 3 pilgrims without clearing gender or truncating ID number', async () => {
+    const container = document.createElement('div');
+    container.id = 'mui-3pilgrim-panel';
+    container.className = 'tab-panel active';
+    container.innerHTML = `
+      <div class="gruhastha-mui-root">
+        <!-- Pilgrim 1 -->
+        <div class="MuiFormControl-root devotee-card">
+          <div class="MuiFormLabel-root">Name *</div>
+          <input type="text" id="p1-name" name="pilgrimName" />
+          <div class="MuiFormLabel-root">Age *</div>
+          <input type="number" id="p1-age" name="pilgrimAge" />
+          <div class="MuiFormLabel-root">Gender *</div>
+          <div id="p1-gender" class="MuiSelect-select" role="button" tabindex="0" aria-haspopup="listbox">Gender</div>
+          <div class="MuiFormLabel-root">Photo ID Proof *</div>
+          <div id="p1-idtype" class="MuiSelect-select" role="button" tabindex="0" aria-haspopup="listbox">Photo ID Proof</div>
+          <div class="MuiFormLabel-root">Photo ID Number *</div>
+          <input type="text" id="p1-idnum" name="photoIdNumber" disabled />
+        </div>
+
+        <!-- Pilgrim 2 -->
+        <div class="MuiFormControl-root devotee-card">
+          <div class="MuiFormLabel-root">Name *</div>
+          <input type="text" id="p2-name" name="pilgrimName" />
+          <div class="MuiFormLabel-root">Age *</div>
+          <input type="number" id="p2-age" name="pilgrimAge" />
+          <div class="MuiFormLabel-root">Gender *</div>
+          <div id="p2-gender" class="MuiSelect-select" role="button" tabindex="0" aria-haspopup="listbox">Gender</div>
+          <div class="MuiFormLabel-root">Photo ID Proof *</div>
+          <div id="p2-idtype" class="MuiSelect-select" role="button" tabindex="0" aria-haspopup="listbox">Photo ID Proof</div>
+          <div class="MuiFormLabel-root">Photo ID Number *</div>
+          <input type="text" id="p2-idnum" name="photoIdNumber" disabled />
+        </div>
+
+        <!-- Pilgrim 3 -->
+        <div class="MuiFormControl-root devotee-card">
+          <div class="MuiFormLabel-root">Name *</div>
+          <input type="text" id="p3-name" name="pilgrimName" />
+          <div class="MuiFormLabel-root">Age *</div>
+          <input type="number" id="p3-age" name="pilgrimAge" />
+          <div class="MuiFormLabel-root">Gender *</div>
+          <div id="p3-gender" class="MuiSelect-select" role="button" tabindex="0" aria-haspopup="listbox">Gender</div>
+          <div class="MuiFormLabel-root">Photo ID Proof *</div>
+          <div id="p3-idtype" class="MuiSelect-select" role="button" tabindex="0" aria-haspopup="listbox">Photo ID Proof</div>
+          <div class="MuiFormLabel-root">Photo ID Number *</div>
+          <input type="text" id="p3-idnum" name="photoIdNumber" disabled />
+        </div>
+      </div>
+    `;
+
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    document.body.appendChild(container);
+
+    // Setup simulated dropdowns with "Aadhaar Card" instead of just "Aadhaar"
+    container.querySelectorAll('.MuiSelect-select').forEach(trigger => {
+      trigger.addEventListener('click', () => {
+        document.querySelectorAll('.MuiPopover-root').forEach(m => m.remove());
+        const menu = document.createElement('div');
+        menu.className = 'MuiPopover-root';
+        menu.setAttribute('role', 'listbox');
+
+        if (trigger.id.includes('gender')) {
+          menu.innerHTML = `
+            <div role="option" class="MuiMenuItem-root">Female</div>
+            <div role="option" class="MuiMenuItem-root">Male</div>
+          `;
+        } else {
+          // Live TTD portal options: Aadhaar Card, Passport, Voter Card
+          menu.innerHTML = `
+            <div role="option" class="MuiMenuItem-root">Aadhaar Card</div>
+            <div role="option" class="MuiMenuItem-root">Passport</div>
+            <div role="option" class="MuiMenuItem-root">Voter Card</div>
+          `;
+        }
+        document.body.appendChild(menu);
+      });
+    });
+
+    const testProfile = createDefaultProfile('3 Pilgrims Test');
+    // Ensure 3 pilgrims
+    while (testProfile.pilgrims.length < 3) {
+      testProfile.pilgrims.push(createDefaultPilgrim(testProfile.pilgrims.length + 1));
+    }
+    testProfile.pilgrims[0].fullName = 'Devotee One';
+    testProfile.pilgrims[0].age = 45;
+    testProfile.pilgrims[0].gender = 'Male';
+    testProfile.pilgrims[0].idProofType = 'Aadhaar';
+    testProfile.pilgrims[0].idNumber = '100020003000';
+
+    testProfile.pilgrims[1].fullName = 'Devotee Two';
+    testProfile.pilgrims[1].age = 40;
+    testProfile.pilgrims[1].gender = 'Female';
+    testProfile.pilgrims[1].idProofType = 'Aadhaar';
+    testProfile.pilgrims[1].idNumber = '206994654066'; // Exact user Aadhaar test
+
+    testProfile.pilgrims[2].fullName = 'Devotee Three';
+    testProfile.pilgrims[2].age = 18;
+    testProfile.pilgrims[2].gender = 'Male';
+    testProfile.pilgrims[2].idProofType = 'Aadhaar';
+    testProfile.pilgrims[2].idNumber = '300040005000';
+
+    const formState = scanForm(testProfile.pilgrims, testProfile.general, []);
+    expect(formState.elements.length).toBe(15); // 5 fields x 3 pilgrims
+
+    const audit = await executeTier1Autofill(formState, { fillAndContinue: false });
+    expect(audit.hasFailures).toBe(false);
+    expect(audit.failureCount).toBe(0);
+    expect(audit.successCount).toBe(15);
+
+    // Verify all 3 Aadhaar Cards matched expected "Aadhaar" without mismatch error
+    const idTypeAudits = audit.items.filter(i => i.fieldKey.includes('idProofType'));
+    expect(idTypeAudits.length).toBe(3);
+    idTypeAudits.forEach(a => expect(a.status).toBe('success'));
+
+    // Verify Pilgrim 2 ID number has full 12 digits intact
+    const p2IdNum = document.getElementById('p2-idnum') as HTMLInputElement;
+    expect(p2IdNum.value).toBe('206994654066');
+
+    // Verify Pilgrim 3 Gender is correctly selected as Male
+    const p3Gender = document.getElementById('p3-gender') as HTMLElement;
+    expect(p3Gender.textContent?.trim()).toBe('Male');
 
     container.remove();
   });

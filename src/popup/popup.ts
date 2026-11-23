@@ -533,10 +533,9 @@ function renderActiveProfile(): void {
  */
 function renderPilgrims(): void {
   if (!activeProfile) return;
-  const currentProfile = activeProfile;
 
   pilgrimsContainer.innerHTML = '';
-  const pilgrims = currentProfile.pilgrims;
+  const pilgrims = activeProfile.pilgrims;
   const includedCount = pilgrims.filter(p => p.included).length;
   pilgrimCountBadge.textContent = String(includedCount);
 
@@ -555,7 +554,7 @@ function renderPilgrims(): void {
         ? checkSpecialDarshanCooldown(pilgrim.lastSpecialDarshanDate)
         : null;
 
-      const isSpecialPreset = currentProfile.bookingPreset === 'SPECIAL_DISABILITY_AGED';
+      const isSpecialPreset = activeProfile?.bookingPreset === 'SPECIAL_DISABILITY_AGED';
 
       specialDarshanHtml = `
         <details class="special-darshan-box" ${isSpecialPreset ? 'open' : ''}>
@@ -622,17 +621,17 @@ function renderPilgrims(): void {
             <!-- Attendant Config -->
             <div class="form-group full-width" style="border-top: 1px solid var(--border-color); padding-top: 8px;">
               <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
-                <input type="checkbox" class="check-attendant-required" ${currentProfile.attendantConfig?.requiresAttendant ? 'checked' : ''}>
+                <input type="checkbox" class="check-attendant-required" ${activeProfile?.attendantConfig?.requiresAttendant ? 'checked' : ''}>
                 <span>Enable Attendant / Companion (Max 1 Person)</span>
               </label>
-              <div class="attendant-options-box" style="display: ${currentProfile.attendantConfig?.requiresAttendant ? 'block' : 'none'}; margin-top:6px;">
+              <div class="attendant-options-box" style="display: ${activeProfile?.attendantConfig?.requiresAttendant ? 'block' : 'none'}; margin-top:6px;">
                 <label>Companion Relationship:</label>
                 <select class="select-companion-rel" style="margin-top:2px;">
-                  <option value="Spouse" ${(currentProfile.attendantConfig?.companionRelationship || 'Spouse') === 'Spouse' ? 'selected' : ''}>Spouse</option>
-                  <option value="Dependent Caretaker (Severe Illness / 80+)" ${currentProfile.attendantConfig?.companionRelationship === 'Dependent Caretaker (Severe Illness / 80+)' ? 'selected' : ''}>Dependent Caretaker (Severe Illness / 80+)</option>
-                  <option value="Other" ${currentProfile.attendantConfig?.companionRelationship === 'Other' ? 'selected' : ''}>Other</option>
+                  <option value="Spouse" ${(activeProfile?.attendantConfig?.companionRelationship || 'Spouse') === 'Spouse' ? 'selected' : ''}>Spouse</option>
+                  <option value="Dependent Caretaker (Severe Illness / 80+)" ${activeProfile?.attendantConfig?.companionRelationship === 'Dependent Caretaker (Severe Illness / 80+)' ? 'selected' : ''}>Dependent Caretaker (Severe Illness / 80+)</option>
+                  <option value="Other" ${activeProfile?.attendantConfig?.companionRelationship === 'Other' ? 'selected' : ''}>Other</option>
                 </select>
-                ${(currentProfile.attendantConfig?.companionRelationship && currentProfile.attendantConfig.companionRelationship !== 'Spouse') ? `
+                ${(activeProfile?.attendantConfig?.companionRelationship && activeProfile.attendantConfig.companionRelationship !== 'Spouse') ? `
                   <div class="spouse-advisory">
                     ⚠️ TTD's official rule allows Only Spouse as attendant (exceptions apply only to severe illness/mental disability or 80+ cases with prior verification).
                   </div>
