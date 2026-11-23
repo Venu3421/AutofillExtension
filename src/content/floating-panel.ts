@@ -48,6 +48,11 @@ export class FloatingPanel {
   private isMappingActive: boolean = false;
   private selectedMappingKey: string = 'pilgrim_0_fullName';
 
+  // Draggable state
+  private customPosition: { top: number; left: number } | null = null;
+  private isDragging: boolean = false;
+  private dragMoved: boolean = false;
+
   constructor(
     private onFillRequested: (mode: 'auto' | 'auto_continue') => void,
     private onProfileChanged: (profileId: string) => void,
@@ -81,9 +86,33 @@ export class FloatingPanel {
       targetParent.appendChild(this.host);
     }
 
+    // Restore any previously dragged position within the session
+    try {
+      const savedPos = sessionStorage.getItem('pilgrim_quickfill_pos');
+      if (savedPos) {
+        this.customPosition = JSON.parse(savedPos);
+      }
+    } catch (e) {}
+
+    this.applyPosition();
     this.render();
     this.startISTClock();
     this.startErrorHelperScanner();
+  }
+
+  private applyPosition(): void {
+    if (!this.host) return;
+    if (this.customPosition) {
+      this.host.style.setProperty('top', `${this.customPosition.top}px`, 'important');
+      this.host.style.setProperty('left', `${this.customPosition.left}px`, 'important');
+      this.host.style.setProperty('bottom', 'auto', 'important');
+      this.host.style.setProperty('right', 'auto', 'important');
+    } else {
+      this.host.style.setProperty('bottom', '20px', 'important');
+      this.host.style.setProperty('right', '20px', 'important');
+      this.host.style.setProperty('top', 'auto', 'important');
+      this.host.style.setProperty('left', 'auto', 'important');
+    }
   }
 
   public update(profile: Profile, settings: ExtensionSettings, formState: DetectedFormState): void {
@@ -213,6 +242,8 @@ export class FloatingPanel {
   private render(): void {
     if (!this.shadow || !this.activeProfile || !this.settings) return;
 
+    this.applyPosition();
+
     const readiness = evaluateBookingReadiness(this.activeProfile);
     const includedPilgrims = this.activeProfile.pilgrims.filter(p => p.included);
     const mismatch = checkTicketCountMismatch(
@@ -227,12 +258,11 @@ export class FloatingPanel {
         :host {
           all: initial !important;
           position: fixed !important;
-          bottom: 20px !important;
-          right: 20px !important;
           z-index: 2147483647 !important;
           display: block !important;
           pointer-events: auto !important;
           font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+          touch-action: none !important;
         }
         .panel {
           width: 320px;
@@ -244,7 +274,7 @@ export class FloatingPanel {
           overflow: hidden;
           font-size: 13px;
           line-height: 1.4;
-          transition: all 0.2s ease;
+          transition: width 0.2s ease;
         }
         .panel.collapsed {
           width: auto;
@@ -256,7 +286,21 @@ export class FloatingPanel {
           padding: 8px 12px;
           background: ${isDark ? '#0f172a' : '#f1f5f9'};
           border-bottom: 1px solid ${isDark ? '#334155' : '#e2e8f0'};
-          cursor: pointer;
+          cursor: grab;
+          user-select: none;
+          touch-action: none;
+        }
+        .header:active {
+          cursor: grabbing;
+        }
+        .drag-handle {
+          display: inline-flex;
+          align-items: center;
+          color: ${isDark ? '#64748b' : '#94a3b8'};
+          margin-right: 4px;
+          font-size: 14px;
+          line-height: 1;
+          cursor: grab;
           user-select: none;
         }
         .title-group {
@@ -495,8 +539,9 @@ export class FloatingPanel {
       </style>
 
       <div class="panel ${this.isCollapsed ? 'collapsed' : ''}">
-        <div class="header" id="panel-header">
+        <div class="header" id="panel-header" title="Drag to move panel anywhere • Click to collapse/expand">
           <div class="title-group">
+            <span class="drag-handle">⠿</span>
             <span>⚡ Pilgrim QuickFill</span>
             <span class="badge-ist" id="ist-clock">--:--:-- IST</span>
             <span class="timer-pill" id="countdown-timer"></span>
@@ -601,7 +646,20 @@ export class FloatingPanel {
   private attachEventListeners(): void {
     if (!this.shadow) return;
 
-    this.shadow.querySelector('#btn-toggle-collapse')?.addEventListener('click', () => {
+    // Enable drag-and-drop to freely reposition the panel anywhere on the screen
+    this.setupDraggable();
+
+    // Toggle collapse on header click (only if user did NOT drag)
+    this.shadow.querySelector('#panel-header')?.addEventListener('click', (e) => {
+      if (this.dragMoved) return;
+      const target = e.target as HTMLElement;
+      if (target.closest('#btn-toggle-collapse')) return;
+      this.isCollapsed = !this.isCollapsed;
+      this.render();
+    });
+
+    this.shadow.querySelector('#btn-toggle-collapse')?.addEventListener('click', (e) => {
+      e.stopPropagation();
       this.isCollapsed = !this.isCollapsed;
       this.render();
     });
@@ -658,6 +716,107 @@ export class FloatingPanel {
         }
       });
     });
+  }
+
+  /**
+   * Sets up smooth pointer dragging on the panel header.
+   * Clamps within screen boundaries and remembers position across reloads.
+   */
+  private setupDraggable(): void {
+    if (!this.shadow || !this.host) return;
+
+    const header = this.shadow.querySelector<HTMLElement>('#panel-header');
+    if (!header) return;
+
+    let startPointerX = 0;
+    let startPointerY = 0;
+    let initialLeft = 0;
+    let initialTop = 0;
+
+    const onPointerDown = (e: PointerEvent) => {
+      // Only drag with primary mouse button (left click)
+      if (e.button !== 0) return;
+
+      // Ignore if clicking collapse toggle button or form control
+      const target = e.target as HTMLElement;
+      if (target.closest('#btn-toggle-collapse')) return;
+
+      this.isDragging = false;
+      this.dragMoved = false;
+      startPointerX = e.clientX;
+      startPointerY = e.clientY;
+
+      const rect = this.host!.getBoundingClientRect();
+      initialLeft = rect.left;
+      initialTop = rect.top;
+
+      try {
+        header.setPointerCapture(e.pointerId);
+      } catch (err) {}
+
+      header.style.cursor = 'grabbing';
+    };
+
+    const onPointerMove = (e: PointerEvent) => {
+      if (startPointerX === 0 && startPointerY === 0) return;
+
+      const dx = e.clientX - startPointerX;
+      const dy = e.clientY - startPointerY;
+
+      // Threshold to distinguish click from intentional drag
+      if (!this.dragMoved && Math.hypot(dx, dy) < 4) {
+        return;
+      }
+
+      this.isDragging = true;
+      this.dragMoved = true;
+
+      const rect = this.host!.getBoundingClientRect();
+      const panelWidth = rect.width || 320;
+      const panelHeight = rect.height || 200;
+
+      // Keep panel clamped safely inside viewport (10px padding from edges)
+      const maxLeft = Math.max(10, window.innerWidth - panelWidth - 10);
+      const maxTop = Math.max(10, window.innerHeight - panelHeight - 10);
+
+      const newLeft = Math.min(Math.max(10, initialLeft + dx), maxLeft);
+      const newTop = Math.min(Math.max(10, initialTop + dy), maxTop);
+
+      this.customPosition = { top: Math.round(newTop), left: Math.round(newLeft) };
+      this.applyPosition();
+    };
+
+    const onPointerUp = (e: PointerEvent) => {
+      if (startPointerX === 0 && startPointerY === 0) return;
+
+      startPointerX = 0;
+      startPointerY = 0;
+      header.style.cursor = 'grab';
+
+      try {
+        if (header.hasPointerCapture(e.pointerId)) {
+          header.releasePointerCapture(e.pointerId);
+        }
+      } catch (err) {}
+
+      // Persist moved position in sessionStorage for current booking session
+      if (this.dragMoved && this.customPosition) {
+        try {
+          sessionStorage.setItem('pilgrim_quickfill_pos', JSON.stringify(this.customPosition));
+        } catch (err) {}
+      }
+
+      // Small delay before clearing dragMoved so header click event knows a drag occurred
+      setTimeout(() => {
+        this.isDragging = false;
+        this.dragMoved = false;
+      }, 50);
+    };
+
+    header.addEventListener('pointerdown', onPointerDown);
+    header.addEventListener('pointermove', onPointerMove);
+    header.addEventListener('pointerup', onPointerUp);
+    header.addEventListener('pointercancel', onPointerUp);
   }
 
   private clearAuditTray(): void {
