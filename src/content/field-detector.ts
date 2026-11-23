@@ -1,4 +1,4 @@
-import { CustomFieldMapping, Pilgrim, GeneralDetails } from '../models/schema';
+import { CustomFieldMapping, Pilgrim, GeneralDetails, Profile, StoredDoc } from '../models/schema';
 
 export interface DetectedElement {
   fieldKey: string;
@@ -7,6 +7,7 @@ export interface DetectedElement {
   pilgrimIndex?: number;
   label?: string;
   source: 'heuristic' | 'custom_map';
+  doc?: StoredDoc;
 }
 
 export interface DetectedFormState {
@@ -32,7 +33,15 @@ const PATTERNS = {
   pincode: /(?:pin[\s_-]*code|pincode|postal|zip)/i,
   captcha: /(?:captcha|security[\s_-]*code|enter[\s_-]*characters)/i,
   continueBtn: /(?:continue|next|proceed|submit|save\s*&\s*continue)/i,
-  forbiddenPaymentBtn: /(?:pay|payment|pay\s*now|checkout|make\s*payment)/i
+  forbiddenPaymentBtn: /(?:pay|payment|pay\s*now|checkout|make\s*payment)/i,
+  category: /(?:special[\s_-]*)?category|differently[\s_-]*abled|sr\.?\s*citizen|senior[\s_-]*citizen|medical(?:[\s_-]*case)?/i,
+  disabilityType: /(?:disability|ph)[\s_-]*type|type[\s_-]*of[\s_-]*disability/i,
+  disabilityPercentage: /(?:disability[\s_-]*)?(?:percentage|percent|%)/i,
+  medicalCondition: /(?:medical[\s_-]*)?(?:condition|illness|disease|surgery)/i,
+  attendantRequired: /(?:attendant|companion|escort)[\s_-]*(?:required|needed|accompanying|opt|flag|\?)/i,
+  dob: /(?:date[\s_-]*of[\s_-]*birth|birth[\s_-]*date|dob)/i,
+  fileUpload: /(?:upload|certificate|aadha?r[\s_-]*proof|id[\s_-]*proof|ph[\s_-]*cert|medical[\s_-]*cert|document|proof[\s_-]*file|udid)/i,
+  udidNumber: /(?:udid|certificate[\s_-]*(?:no|number)|cert[\s_-]*no)/i
 };
 
 /**
@@ -40,18 +49,32 @@ const PATTERNS = {
  */
 export function isElementVisible(el: HTMLElement): boolean {
   if (!el || !el.isConnected) return false;
-  if (el.closest('.tab-panel:not(.active)') || el.closest('[hidden]') || el.closest('[aria-hidden="true"]')) {
+
+  // Check tab panels: if inside a tab panel, it must be the active tab panel
+  const tabPanel = el.closest('.tab-panel');
+  if (tabPanel && !tabPanel.classList.contains('active')) {
     return false;
   }
-  if (el.offsetParent === null && window.getComputedStyle(el).position !== 'fixed') {
+
+  // Check if element or any ancestor is hidden via inline style, hidden attribute, or aria-hidden
+  let curr: HTMLElement | null = el;
+  while (curr && curr !== document.body && curr !== document.documentElement) {
+    if (curr.hidden || curr.getAttribute('aria-hidden') === 'true') {
+      return false;
+    }
+    const style = curr.style;
+    if (style && (style.display === 'none' || style.visibility === 'hidden')) {
+      return false;
+    }
+    curr = curr.parentElement;
+  }
+
+  const compStyle = window.getComputedStyle(el);
+  if (compStyle.display === 'none' || compStyle.visibility === 'hidden' || compStyle.opacity === '0') {
     return false;
   }
-  const style = window.getComputedStyle(el);
-  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') {
-    return false;
-  }
-  const rect = el.getBoundingClientRect();
-  return rect.width > 0 || rect.height > 0 || el.getClientRects().length > 0;
+
+  return true;
 }
 
 /**
@@ -98,21 +121,25 @@ function getAssociatedLabel(el: HTMLElement): string {
     texts.push(parentLabel.textContent.trim());
   }
 
-  // 5. Check enclosing Angular Material mat-form-field or form-group container
-  const formField = el.closest('mat-form-field, .mat-form-field, .mat-mdc-form-field, .form-group, .form-item, td, tr');
+  // 5. Check enclosing Angular Material / Material-UI / Tailwind form container
+  const formField = el.closest(
+    'mat-form-field, .mat-form-field, .mat-mdc-form-field, .MuiFormControl-root, [class*="formcontrol" i], [class*="form-group" i], [class*="form-item" i], [class*="field" i], td, tr'
+  );
   if (formField) {
-    const matLabel = formField.querySelector('mat-label, .mat-form-field-label, .mat-mdc-floating-label, label, .label');
+    const matLabel = formField.querySelector(
+      'mat-label, .mat-form-field-label, .mat-mdc-floating-label, .MuiFormLabel-root, .MuiInputLabel-root, label, .label, [class*="label" i]'
+    );
     if (matLabel && matLabel.textContent) {
       texts.push(matLabel.textContent.trim());
     }
   }
 
-  // 6. Check nearest preceding sibling
+  // 6. Check preceding siblings of el
   let sibling = el.previousElementSibling;
   while (sibling) {
     if (['LABEL', 'SPAN', 'P', 'DIV', 'TH', 'MAT-LABEL'].includes(sibling.tagName) && sibling.textContent) {
       const stext = sibling.textContent.trim();
-      if (stext.length < 80) {
+      if (stext.length > 0 && stext.length < 80) {
         texts.push(stext);
         break;
       }
@@ -120,19 +147,38 @@ function getAssociatedLabel(el: HTMLElement): string {
     sibling = sibling.previousElementSibling;
   }
 
-  // 7. Check parent hierarchy for single-control wrappers only (never across multi-control rows)
+  // 6b. Check preceding siblings of el's wrapper parent only if parent is a dedicated input-base wrapper
+  if (
+    el.parentElement &&
+    el.parentElement.tagName !== 'BODY' &&
+    el.parentElement.tagName !== 'FORM' &&
+    (el.parentElement.matches('.MuiInput-root, .MuiInputBase-root, [class*="input-wrapper" i], [class*="select-wrapper" i], [class*="control" i]') || el.parentElement.querySelectorAll('input, select, textarea').length === 1)
+  ) {
+    let pSibling = el.parentElement.previousElementSibling;
+    while (pSibling) {
+      if (['LABEL', 'MAT-LABEL'].includes(pSibling.tagName) || pSibling.classList.contains('MuiFormLabel-root') || pSibling.classList.contains('MuiInputLabel-root')) {
+        const pstext = pSibling.textContent?.trim() || '';
+        if (pstext.length > 0 && pstext.length < 80) {
+          texts.push(pstext);
+          break;
+        }
+      }
+      pSibling = pSibling.previousElementSibling;
+    }
+  }
+
+  // 7. Check parent hierarchy for single-control wrappers or labeled containers
   let ancestor: HTMLElement | null = el.parentElement;
   let depth = 0;
   while (ancestor && depth < 3 && ancestor.tagName !== 'BODY' && ancestor.tagName !== 'FORM') {
-    // Only inspect single-control wrappers; if it contains multiple inputs, stop climbing
-    const controlCount = ancestor.querySelectorAll('input, select, textarea').length;
-    if (controlCount > 1) {
-      break;
-    }
-    const header = ancestor.querySelector('label, mat-label, .label, .title, [class*="label" i]');
-    if (header && header.textContent) {
-      const htext = header.textContent.trim();
-      if (htext.length < 80 && !texts.includes(htext)) texts.push(htext);
+    // Only inspect single-control wrappers so we don't grab labels belonging to sibling controls in the same row/grid
+    const controlCount = ancestor.querySelectorAll('input, select, textarea, [role="button"]').length;
+    if (controlCount <= 1) {
+      const header = ancestor.querySelector('label, mat-label, .MuiFormLabel-root, .MuiInputLabel-root, .label, .title, [class*="label" i]');
+      if (header && header.textContent) {
+        const htext = header.textContent.trim();
+        if (htext.length > 0 && htext.length < 80 && !texts.includes(htext)) texts.push(htext);
+      }
     }
     depth++;
     ancestor = ancestor.parentElement;
@@ -158,7 +204,7 @@ export function findControlsForLabels(pattern: RegExp): HTMLElement[] {
   const claimed = new Set<HTMLElement>();
 
   const candidateLabels = Array.from(document.querySelectorAll<HTMLElement>(
-    'label, [class*="label" i], mat-label, .title, th, [data-placeholder], [data-label]'
+    'label, [class*="label" i], mat-label, .MuiFormLabel-root, .MuiInputLabel-root, .title, th, [data-placeholder], [data-label]'
   )).filter(isElementVisible);
 
   for (const lbl of candidateLabels) {
@@ -177,30 +223,46 @@ export function findControlsForLabels(pattern: RegExp): HTMLElement[] {
       }
     }
 
-    // B. Search inside label's parent or closest container
+    // B. Search inside label's parent or ancestor container
     if (!targetControl) {
-      const container = lbl.closest('.form-group, .form-item, .col, .row, div') || lbl.parentElement;
-      if (container) {
-        targetControl = container.querySelector<HTMLElement>(
-          'input, select, mat-select, [role="button"], [role="combobox"], [aria-haspopup], button, div[class*="select" i], div[tabindex]'
+      let container: HTMLElement | null = lbl.parentElement;
+      let depth = 0;
+      while (container && depth < 4 && container.tagName !== 'BODY' && container.tagName !== 'FORM') {
+        const found = container.querySelector<HTMLElement>(
+          'input:not([type="hidden"]), select, mat-select, [role="button"], [role="combobox"], [aria-haspopup], button, div[class*="select" i], div[tabindex]'
         );
+        if (found && found !== lbl && !lbl.contains(found) && isElementVisible(found)) {
+          targetControl = found;
+          break;
+        }
+        container = container.parentElement;
+        depth++;
       }
     }
 
-    // C. Check siblings
+    // C. Check siblings of label or siblings of label wrapper
     if (!targetControl) {
-      let sib = lbl.nextElementSibling as HTMLElement | null;
-      while (sib) {
-        if (sib.matches('input, select, mat-select, [role="button"], [role="combobox"], [aria-haspopup], button, div[class*="select" i]')) {
-          targetControl = sib;
-          break;
+      const candidateSibs: (HTMLElement | null)[] = [
+        lbl.nextElementSibling as HTMLElement | null,
+        lbl.parentElement?.nextElementSibling as HTMLElement | null
+      ];
+
+      for (let sib of candidateSibs) {
+        while (sib) {
+          if (sib.matches('input:not([type="hidden"]), select, mat-select, [role="button"], [role="combobox"], [aria-haspopup], button, div[class*="select" i], div[tabindex]')) {
+            targetControl = sib;
+            break;
+          }
+          const inner = sib.querySelector<HTMLElement>(
+            'input:not([type="hidden"]), select, mat-select, [role="button"], [role="combobox"], [aria-haspopup], button, div[class*="select" i], div[tabindex]'
+          );
+          if (inner && isElementVisible(inner)) {
+            targetControl = inner;
+            break;
+          }
+          sib = sib.nextElementSibling as HTMLElement | null;
         }
-        const inner = sib.querySelector<HTMLElement>('input, select, mat-select, [role="button"], [role="combobox"], [aria-haspopup], button');
-        if (inner) {
-          targetControl = inner;
-          break;
-        }
-        sib = sib.nextElementSibling as HTMLElement | null;
+        if (targetControl) break;
       }
     }
 
@@ -334,7 +396,8 @@ function findPilgrimRowContainers(): HTMLElement[] {
 export function scanForm(
   pilgrims: Pilgrim[],
   general: GeneralDetails,
-  customMappings: CustomFieldMapping[] = []
+  customMappings: CustomFieldMapping[] = [],
+  profile?: Profile
 ): DetectedFormState {
   const detected: DetectedElement[] = [];
   const claimedElements = new Set<HTMLElement>();
@@ -342,6 +405,7 @@ export function scanForm(
 
   // Filter to included pilgrims only
   const activePilgrims = pilgrims.filter(p => p.included);
+  const primaryPilgrim = activePilgrims[0];
 
   // 1. First Priority: Check Custom Field Mappings for this domain
   const claimedCustomKeys = new Set<string>();
@@ -354,15 +418,30 @@ export function scanForm(
       const el = document.querySelector<HTMLElement>(mapping.selector);
       if (!el || !isElementVisible(el) || claimedElements.has(el)) continue;
 
-      // Disallow non-form controls (like container DIVs, sections, etc.)
-      const isControl = el instanceof HTMLInputElement ||
+      let resolvedEl: HTMLElement = el;
+      const isDirectControl = el instanceof HTMLInputElement ||
         el instanceof HTMLSelectElement ||
         el instanceof HTMLTextAreaElement ||
         el.tagName === 'MAT-SELECT' ||
-        el.getAttribute('role') === 'combobox';
-      if (!isControl) {
-        console.debug('[FieldDetector] Skipping custom mapping on non-input element:', el.tagName, mapping.selector);
-        continue;
+        el.getAttribute('role') === 'combobox' ||
+        el.getAttribute('role') === 'button' ||
+        el.tagName === 'BUTTON' ||
+        el.hasAttribute('aria-haspopup') ||
+        el.classList.contains('MuiSelect-select') ||
+        (el.matches && el.matches('div[class*="select" i]')) ||
+        el.getAttribute('tabindex') !== null;
+
+      if (!isDirectControl) {
+        // el may be a container, form-group, or wrapper DIV: look inside for the real control
+        const inner = el.querySelector<HTMLElement>(
+          'input:not([type="hidden"]), select, textarea, mat-select, [role="button"], [role="combobox"], [aria-haspopup], button, .MuiSelect-select, div[class*="select" i], div[tabindex]'
+        );
+        if (inner && isElementVisible(inner)) {
+          resolvedEl = inner;
+        } else {
+          console.debug('[FieldDetector] Skipping custom mapping on non-input element:', el.tagName, mapping.selector);
+          continue;
+        }
       }
 
       // Avoid claiming the same field key multiple times from custom mappings on the same page
@@ -372,17 +451,18 @@ export function scanForm(
       }
 
       // Guard against mismatched custom mappings (e.g. mapping Gothram input to fullName or Gender to number input)
-      const inputName = (el.getAttribute('name') || '').toLowerCase();
+      const inputName = (resolvedEl.getAttribute('name') || '').toLowerCase();
       if (mapping.fieldKey.includes('fullName') && /gothram/i.test(inputName)) {
         console.debug('[FieldDetector] Skipping erroneous mapping of Gothram input to fullName:', mapping.selector);
         continue;
       }
-      if (mapping.fieldKey.includes('gender') && el instanceof HTMLInputElement && el.type === 'number') {
+      if (mapping.fieldKey.includes('gender') && resolvedEl instanceof HTMLInputElement && resolvedEl.type === 'number') {
         console.debug('[FieldDetector] Skipping invalid custom mapping of gender to numeric input:', mapping.selector);
         continue;
       }
 
       let targetValue = '';
+      let doc: StoredDoc | undefined;
       const matchPilgrim = mapping.fieldKey.match(/^pilgrim_(\d+)_(.+)$/);
       let pilgrimIndex: number | undefined;
 
@@ -397,17 +477,36 @@ export function scanForm(
         if (general[field] !== undefined) {
           targetValue = String(general[field] || '');
         }
+      } else if (mapping.fieldKey === 'special_category') {
+        targetValue = primaryPilgrim?.specialCategory || 'Differently Abled';
+      } else if (mapping.fieldKey === 'special_disabilityType') {
+        targetValue = primaryPilgrim?.disabilityType || 'Orthopedic / Locomotor';
+      } else if (mapping.fieldKey === 'special_disabilityPercentage') {
+        targetValue = primaryPilgrim?.disabilityPercentage ? String(primaryPilgrim.disabilityPercentage) : '';
+      } else if (mapping.fieldKey === 'special_medicalCondition') {
+        targetValue = primaryPilgrim?.medicalCondition || 'Other';
+      } else if (mapping.fieldKey === 'special_certificateOrUdidNumber') {
+        targetValue = primaryPilgrim?.certificateOrUdidNumber || '';
+      } else if (mapping.fieldKey === 'special_attendantRequired') {
+        targetValue = profile?.attendantConfig?.requiresAttendant ? 'Yes' : 'No';
+      } else if (mapping.fieldKey === 'doc_id_proof') {
+        doc = primaryPilgrim?.proofDocuments?.idProofDoc;
+        targetValue = doc?.fileName || 'aadhaar_doc.pdf';
+      } else if (mapping.fieldKey === 'doc_category_cert') {
+        doc = primaryPilgrim?.proofDocuments?.categoryCertificateDoc;
+        targetValue = doc?.fileName || 'certificate_doc.pdf';
       }
 
       detected.push({
         fieldKey: mapping.fieldKey,
-        element: el,
+        element: resolvedEl,
         targetValue,
         pilgrimIndex,
         label: mapping.meta.placeholder || mapping.meta.nearbyText || mapping.fieldKey,
-        source: 'custom_map'
+        source: 'custom_map',
+        doc
       });
-      claimedElements.add(el);
+      claimedElements.add(resolvedEl);
       claimedCustomKeys.add(mapping.fieldKey);
     } catch (err) {
       console.debug('[FieldDetector] Failed querying custom selector:', mapping.selector, err);
@@ -425,16 +524,25 @@ export function scanForm(
     '[role="radiogroup"]',
     'button[aria-haspopup]',
     'button[aria-expanded]',
+    'button[role="combobox"]',
+    'button[class*="select" i]',
+    'button[class*="dropdown" i]',
     '[role="button"][aria-haspopup]',
     '[role="button"][aria-expanded]',
+    '[role="button"][class*="select" i]',
+    '[role="button"][class*="dropdown" i]',
     '[aria-haspopup="listbox"]',
     '[aria-haspopup="true"]',
     '.MuiSelect-select',
+    '.MuiSelect-root',
     '.ant-select-selector',
     '[data-radix-dropdown-trigger]',
+    'div[tabindex="0"][role="button"]',
     'div[class*="select-trigger" i]',
     'div[class*="select_trigger" i]',
-    'div[class*="custom-select" i]'
+    'div[class*="custom-select" i]',
+    'div[class*="select" i][role="button"]',
+    'div[class*="dropdown" i][role="button"]'
   ].join(', ');
 
   const allVisibleControls = Array.from(
@@ -442,6 +550,9 @@ export function scanForm(
   ).filter(isElementVisible);
 
   let captchaElement: HTMLInputElement | undefined;
+  const fileUploadsAadhaar: HTMLElement[] = [];
+  const fileUploadsCert: HTMLElement[] = [];
+  const fileUploadsGeneral: HTMLElement[] = [];
 
   for (const el of allVisibleControls) {
     if (claimedElements.has(el)) continue;
@@ -449,6 +560,19 @@ export function scanForm(
     if (el instanceof HTMLSelectElement && el.disabled) continue;
 
     const labelText = getAssociatedLabel(el);
+
+    // 0. File Inputs (<input type="file">) - prioritize immediately so file inputs are never claimed as text/idNumber/category fields!
+    if (el instanceof HTMLInputElement && el.type === 'file') {
+      if (/aadha?r|id[\s_-]*proof|photo[\s_-]*id|identity/i.test(labelText)) {
+        fileUploadsAadhaar.push(el);
+      } else if (/cert|disability|medical|hospital|discharge|udid/i.test(labelText)) {
+        fileUploadsCert.push(el);
+      } else {
+        fileUploadsGeneral.push(el);
+      }
+      claimedElements.add(el);
+      continue;
+    }
 
     if (PATTERNS.captcha.test(labelText) || /captcha/i.test(el.id || '') || /captcha/i.test((el as HTMLInputElement).name || '')) {
       if (el instanceof HTMLInputElement && !captchaElement) {
@@ -518,6 +642,79 @@ export function scanForm(
         source: 'heuristic'
       });
       claimedElements.add(el);
+    } else if (PATTERNS.category.test(labelText) && !detected.some(d => d.fieldKey === 'special_category')) {
+      if (el instanceof HTMLInputElement && el.type === 'radio') {
+        const radioName = el.name;
+        if (radioName) {
+          const allRadios = document.querySelectorAll(`input[type="radio"][name="${CSS.escape(radioName)}"]`);
+          allRadios.forEach(r => claimedElements.add(r as HTMLElement));
+        }
+      }
+      detected.push({
+        fieldKey: 'special_category',
+        element: el,
+        targetValue: primaryPilgrim?.specialCategory || 'Differently Abled',
+        label: 'Category',
+        source: 'heuristic'
+      });
+      claimedElements.add(el);
+    } else if (
+      PATTERNS.attendantRequired.test(labelText) &&
+      !PATTERNS.name.test(labelText) &&
+      (el instanceof HTMLSelectElement || (el instanceof HTMLInputElement && (el.type === 'radio' || el.type === 'checkbox')) || el.getAttribute('role') === 'switch' || el.getAttribute('role') === 'checkbox') &&
+      !detected.some(d => d.fieldKey === 'special_attendantRequired')
+    ) {
+      if (el instanceof HTMLInputElement && el.type === 'radio') {
+        const radioName = el.name;
+        if (radioName) {
+          const allRadios = document.querySelectorAll(`input[type="radio"][name="${CSS.escape(radioName)}"]`);
+          allRadios.forEach(r => claimedElements.add(r as HTMLElement));
+        }
+      }
+      detected.push({
+        fieldKey: 'special_attendantRequired',
+        element: el,
+        targetValue: profile?.attendantConfig?.requiresAttendant ? 'Yes' : 'No',
+        label: 'Attendant Required',
+        source: 'heuristic'
+      });
+      claimedElements.add(el);
+    } else if (PATTERNS.disabilityType.test(labelText) && !detected.some(d => d.fieldKey === 'special_disabilityType')) {
+      detected.push({
+        fieldKey: 'special_disabilityType',
+        element: el,
+        targetValue: primaryPilgrim?.disabilityType || 'Orthopedic / Locomotor',
+        label: 'Disability Type',
+        source: 'heuristic'
+      });
+      claimedElements.add(el);
+    } else if (PATTERNS.disabilityPercentage.test(labelText) && !detected.some(d => d.fieldKey === 'special_disabilityPercentage')) {
+      detected.push({
+        fieldKey: 'special_disabilityPercentage',
+        element: el,
+        targetValue: primaryPilgrim?.disabilityPercentage !== undefined ? String(primaryPilgrim.disabilityPercentage) : '',
+        label: 'Disability Percentage',
+        source: 'heuristic'
+      });
+      claimedElements.add(el);
+    } else if (PATTERNS.medicalCondition.test(labelText) && !detected.some(d => d.fieldKey === 'special_medicalCondition')) {
+      detected.push({
+        fieldKey: 'special_medicalCondition',
+        element: el,
+        targetValue: primaryPilgrim?.medicalCondition || 'Other',
+        label: 'Medical Condition',
+        source: 'heuristic'
+      });
+      claimedElements.add(el);
+    } else if (PATTERNS.udidNumber.test(labelText) && !detected.some(d => d.fieldKey === 'special_certificateOrUdidNumber')) {
+      detected.push({
+        fieldKey: 'special_certificateOrUdidNumber',
+        element: el,
+        targetValue: primaryPilgrim?.certificateOrUdidNumber || '',
+        label: 'Certificate / UDID Number',
+        source: 'heuristic'
+      });
+      claimedElements.add(el);
     }
   }
 
@@ -529,11 +726,17 @@ export function scanForm(
   const idTypeControls: HTMLElement[] = [];
   const idNumberInputs: HTMLElement[] = [];
   const gothramInputs: HTMLElement[] = [];
+  const dobInputs: HTMLElement[] = [];
 
   const claimedRadioNames = new Set<string>();
 
   for (const el of allVisibleControls) {
     if (claimedElements.has(el)) continue;
+
+    // If el is a container DIV or wrapper that contains an input or select, skip the container so the actual input/select is processed directly
+    if (el.tagName === 'DIV' && el.querySelector('input:not([type="hidden"]), select, textarea')) {
+      continue;
+    }
 
     // For inputs: keep conditionally disabled inputs if they match Photo ID Number (enabled upon ID Proof selection)
     if (el instanceof HTMLInputElement) {
@@ -559,17 +762,23 @@ export function scanForm(
     const isNumberInput = el instanceof HTMLInputElement && el.type === 'number';
     const isRadioInput = el instanceof HTMLInputElement && el.type === 'radio';
 
-    // Age
-    if (PATTERNS.age.test(labelText) || (isNumberInput && !PATTERNS.pincode.test(labelText) && !PATTERNS.mobile.test(labelText))) {
+    // 1. ID Number (Check ID Number FIRST before Age so numeric ID fields aren't claimed as Age!)
+    if (!isRadioInput && PATTERNS.idNumber.test(labelText) && el.tagName !== 'SELECT' && el.getAttribute('role') !== 'combobox') {
+      idNumberInputs.push(el);
+      claimedElements.add(el);
+    }
+    // 2. Age (Check Age explicitly, only fall back to number input if NOT idNumber!)
+    else if (PATTERNS.age.test(labelText) || (isNumberInput && !PATTERNS.pincode.test(labelText) && !PATTERNS.mobile.test(labelText) && !PATTERNS.idNumber.test(labelText))) {
       ageInputs.push(el);
       claimedElements.add(el);
     }
-    // Gender (select, mat-select, radio, combobox, or custom dropdown trigger button/div)
+    // 3. Gender (select, mat-select, radio, combobox, or custom dropdown trigger button/div)
     else if (!isNumberInput && (
       PATTERNS.gender.test(labelText) ||
       (el.tagName === 'SELECT' && /male|female/i.test(el.innerHTML)) ||
       (el.tagName === 'MAT-SELECT' && /gender/i.test(labelText)) ||
-      (isRadioInput && /gender|sex/i.test((el as HTMLInputElement).name + ' ' + labelText))
+      (isRadioInput && /gender|sex/i.test((el as HTMLInputElement).name + ' ' + labelText)) ||
+      ((el.getAttribute('role') === 'button' || el.classList.contains('MuiSelect-select') || (el.matches && el.matches('div[class*="select" i]')) || el.getAttribute('tabindex') !== null) && PATTERNS.gender.test(labelText))
     )) {
       if (isRadioInput) {
         const radioName = (el as HTMLInputElement).name;
@@ -582,22 +791,27 @@ export function scanForm(
       genderControls.push(el);
       claimedElements.add(el);
     }
-    // ID Number (must be an input/control and have number/card/identity indicator)
-    else if (!isNumberInput && PATTERNS.idNumber.test(labelText) && el.tagName !== 'SELECT') {
-      idNumberInputs.push(el);
-      claimedElements.add(el);
-    }
-    // ID Proof Type (usually SELECT, MAT-SELECT, combobox, or custom dropdown trigger)
-    else if (PATTERNS.idType.test(labelText) || (el.tagName === 'SELECT' && /aadha?r|passport/i.test(el.innerHTML)) || (el.tagName === 'MAT-SELECT' && /id|proof/i.test(labelText))) {
+    // 4. ID Proof Type (usually SELECT, MAT-SELECT, combobox, or custom dropdown trigger)
+    else if (!isNumberInput && (
+      PATTERNS.idType.test(labelText) ||
+      (el.tagName === 'SELECT' && /aadha?r|passport/i.test(el.innerHTML)) ||
+      (el.tagName === 'MAT-SELECT' && /id|proof/i.test(labelText)) ||
+      ((el.getAttribute('role') === 'button' || el.classList.contains('MuiSelect-select') || (el.matches && el.matches('div[class*="select" i]')) || el.getAttribute('tabindex') !== null) && PATTERNS.idType.test(labelText))
+    )) {
       idTypeControls.push(el);
       claimedElements.add(el);
     }
-    // Name
-    else if (PATTERNS.name.test(labelText)) {
+    // 5. Date of Birth (check before Name so date inputs aren't mistakenly claimed as name)
+    else if (PATTERNS.dob.test(labelText) || (el instanceof HTMLInputElement && el.type === 'date')) {
+      dobInputs.push(el);
+      claimedElements.add(el);
+    }
+    // 6. Name
+    else if (PATTERNS.name.test(labelText) && !PATTERNS.dob.test(labelText) && (el as HTMLInputElement).type !== 'date') {
       nameInputs.push(el);
       claimedElements.add(el);
     }
-    // Gothram
+    // 7. Gothram
     else if (PATTERNS.gothram.test(labelText)) {
       gothramInputs.push(el);
       claimedElements.add(el);
@@ -714,6 +928,45 @@ export function scanForm(
         source: 'heuristic'
       });
     }
+
+    if (dobInputs[i]) {
+      detected.push({
+        fieldKey: `pilgrim_${i}_dob`,
+        element: dobInputs[i],
+        targetValue: pilgrim.dob || '',
+        pilgrimIndex: i,
+        label: `Pilgrim ${i + 1} DOB`,
+        source: 'heuristic'
+      });
+    }
+  }
+
+  // 4b. Attach File Upload Controls
+  const aadhaarUploadEl = fileUploadsAadhaar[0] || fileUploadsGeneral[0];
+  const certUploadEl = fileUploadsCert[0] || (fileUploadsAadhaar.length > 0 ? fileUploadsGeneral[0] : fileUploadsGeneral[1]);
+
+  if (aadhaarUploadEl && !detected.some(d => d.fieldKey === 'doc_id_proof')) {
+    const doc = primaryPilgrim?.proofDocuments?.idProofDoc;
+    detected.push({
+      fieldKey: 'doc_id_proof',
+      element: aadhaarUploadEl,
+      targetValue: doc?.fileName || 'aadhaar_doc.pdf',
+      label: 'ID Proof Document (<1MB)',
+      source: 'heuristic',
+      doc
+    });
+  }
+
+  if (certUploadEl && !detected.some(d => d.fieldKey === 'doc_category_cert')) {
+    const doc = primaryPilgrim?.proofDocuments?.categoryCertificateDoc;
+    detected.push({
+      fieldKey: 'doc_category_cert',
+      element: certUploadEl,
+      targetValue: doc?.fileName || 'certificate_doc.pdf',
+      label: 'Category Certificate Document (<1MB)',
+      source: 'heuristic',
+      doc
+    });
   }
 
   // 5. Find Visible Safe Continue Button (NOT Payment!)

@@ -5,14 +5,73 @@ import {
   DEFAULT_APP_STATE,
   createDefaultPilgrim,
   createDefaultProfile,
-  BookingPreset
+  BookingPreset,
+  StoredDoc
 } from '../models/schema';
 import {
   evaluateBookingReadiness,
   validateAadhaar,
-  formatAadhaarChunks
+  formatAadhaarChunks,
+  validateProofDocument,
+  checkSpecialDarshanCooldown,
+  MAX_DOC_SIZE_BYTES
 } from '../validation/validators';
 import { encryptVault, decryptVault } from '../crypto/vault';
+
+/**
+ * Automatically compresses an image file using client-side canvas so it's under 900 KB.
+ */
+export async function compressImage(file: File): Promise<StoredDoc> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 1600;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return reject(new Error('Canvas context unavailable'));
+        ctx.drawImage(img, 0, 0, width, height);
+
+        let quality = 0.85;
+        let dataUrl = canvas.toDataURL('image/jpeg', quality);
+        let base64 = dataUrl.split(',')[1];
+        let bytes = Math.round((base64.length * 3) / 4);
+
+        while (bytes > 900 * 1024 && quality > 0.3) {
+          quality -= 0.1;
+          dataUrl = canvas.toDataURL('image/jpeg', quality);
+          base64 = dataUrl.split(',')[1];
+          bytes = Math.round((base64.length * 3) / 4);
+        }
+
+        resolve({
+          fileName: file.name.replace(/\.[^/.]+$/, '') + '-compressed.jpg',
+          mimeType: 'image/jpeg',
+          sizeBytes: bytes,
+          base64Data: base64
+        });
+      };
+      img.onerror = () => reject(new Error('Failed loading image for compression'));
+      img.src = e.target?.result as string;
+    };
+    reader.onerror = () => reject(new Error('Failed reading file'));
+    reader.readAsDataURL(file);
+  });
+}
 
 let appState: AppState = DEFAULT_APP_STATE;
 let activeProfile: Profile | null = null;
@@ -117,6 +176,9 @@ async function loadState(): Promise<void> {
   }
 
   activeProfile = appState.profiles.find(p => p.id === appState.activeProfileId) || appState.profiles[0];
+  if (activeProfile && !activeProfile.attendantConfig) {
+    activeProfile.attendantConfig = { requiresAttendant: false, companionRelationship: 'Spouse' };
+  }
 }
 
 /**
@@ -376,6 +438,9 @@ function setupEventListeners(): void {
       appState = importedState;
       await chrome.storage.local.set({ app_state: appState });
       activeProfile = appState.profiles.find(p => p.id === appState.activeProfileId) || appState.profiles[0];
+  if (activeProfile && !activeProfile.attendantConfig) {
+    activeProfile.attendantConfig = { requiresAttendant: false, companionRelationship: 'Spouse' };
+  }
       renderProfileSelector();
       renderActiveProfile();
       updateReadiness();
@@ -468,9 +533,10 @@ function renderActiveProfile(): void {
  */
 function renderPilgrims(): void {
   if (!activeProfile) return;
+  const currentProfile = activeProfile;
 
   pilgrimsContainer.innerHTML = '';
-  const pilgrims = activeProfile.pilgrims;
+  const pilgrims = currentProfile.pilgrims;
   const includedCount = pilgrims.filter(p => p.included).length;
   pilgrimCountBadge.textContent = String(includedCount);
 
@@ -481,6 +547,138 @@ function renderPilgrims(): void {
     const aadhaarCheck = pilgrim.idProofType === 'Aadhaar' && pilgrim.idNumber
       ? validateAadhaar(pilgrim.idNumber)
       : null;
+
+    // Special Darshan Section on Primary Pilgrim
+    let specialDarshanHtml = '';
+    if (idx === 0) {
+      const cooldownInfo = pilgrim.lastSpecialDarshanDate
+        ? checkSpecialDarshanCooldown(pilgrim.lastSpecialDarshanDate)
+        : null;
+
+      const isSpecialPreset = currentProfile.bookingPreset === 'SPECIAL_DISABILITY_AGED';
+
+      specialDarshanHtml = `
+        <details class="special-darshan-box" ${isSpecialPreset ? 'open' : ''}>
+          <summary>♿ Special Darshan Details & Docs (&lt;1 MB)</summary>
+          <div class="form-grid" style="margin-top: 8px;">
+            <div class="form-group">
+              <label>Special Category</label>
+              <select class="select-special-category">
+                <option value="Differently Abled" ${(pilgrim.specialCategory || 'Differently Abled') === 'Differently Abled' ? 'selected' : ''}>Differently Abled</option>
+                <option value="Senior Citizen" ${pilgrim.specialCategory === 'Senior Citizen' ? 'selected' : ''}>Senior Citizen (65+)</option>
+                <option value="Medical Cases" ${pilgrim.specialCategory === 'Medical Cases' ? 'selected' : ''}>Medical Cases</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Date of Birth (DOB)</label>
+              <input type="date" class="input-dob" value="${pilgrim.dob || ''}">
+            </div>
+
+            <div class="form-group box-differently-abled" style="display: ${(pilgrim.specialCategory || 'Differently Abled') === 'Differently Abled' ? 'flex' : 'none'};">
+              <label>Disability Type *</label>
+              <select class="select-disability-type">
+                <option value="Orthopedic / Locomotor" ${(pilgrim.disabilityType || 'Orthopedic / Locomotor') === 'Orthopedic / Locomotor' ? 'selected' : ''}>Orthopedic / Locomotor</option>
+                <option value="Visual Impairment" ${pilgrim.disabilityType === 'Visual Impairment' ? 'selected' : ''}>Visual Impairment</option>
+                <option value="Hearing Impairment" ${pilgrim.disabilityType === 'Hearing Impairment' ? 'selected' : ''}>Hearing Impairment</option>
+                <option value="Mental / Intellectual" ${pilgrim.disabilityType === 'Mental / Intellectual' ? 'selected' : ''}>Mental / Intellectual</option>
+                <option value="Speech & Language" ${pilgrim.disabilityType === 'Speech & Language' ? 'selected' : ''}>Speech & Language</option>
+                <option value="Multiple Disabilities" ${pilgrim.disabilityType === 'Multiple Disabilities' ? 'selected' : ''}>Multiple Disabilities</option>
+                <option value="Other" ${pilgrim.disabilityType === 'Other' ? 'selected' : ''}>Other</option>
+              </select>
+            </div>
+
+            <div class="form-group box-differently-abled" style="display: ${(pilgrim.specialCategory || 'Differently Abled') === 'Differently Abled' ? 'flex' : 'none'};">
+              <label>Disability Percentage (%)</label>
+              <input type="number" class="input-disability-percentage" min="1" max="100" value="${pilgrim.disabilityPercentage !== undefined ? pilgrim.disabilityPercentage : ''}" placeholder="e.g. 40">
+              ${(typeof pilgrim.disabilityPercentage === 'number' && pilgrim.disabilityPercentage <= 20) ? '<span class="cooldown-badge">⚠️ &gt;20% cited by many TTD guides</span>' : ''}
+            </div>
+
+            <div class="form-group full-width box-differently-abled" style="display: ${(pilgrim.specialCategory || 'Differently Abled') === 'Differently Abled' ? 'flex' : 'none'};">
+              <label>Govt Certificate / UDID Card Number</label>
+              <input type="text" class="input-udid-number" value="${pilgrim.certificateOrUdidNumber || ''}" placeholder="UDID Number or Reg No">
+            </div>
+
+            <div class="form-group full-width box-medical" style="display: ${pilgrim.specialCategory === 'Medical Cases' ? 'flex' : 'none'};">
+              <label>Medical Condition / Surgery *</label>
+              <select class="select-medical-condition">
+                <option value="Kidney Transplantation" ${(pilgrim.medicalCondition || 'Kidney Transplantation') === 'Kidney Transplantation' ? 'selected' : ''}>Kidney Transplantation</option>
+                <option value="Open Heart Surgery" ${pilgrim.medicalCondition === 'Open Heart Surgery' ? 'selected' : ''}>Open Heart Surgery</option>
+                <option value="Dialysis" ${pilgrim.medicalCondition === 'Dialysis' ? 'selected' : ''}>Dialysis</option>
+                <option value="Liver Transplantation" ${pilgrim.medicalCondition === 'Liver Transplantation' ? 'selected' : ''}>Liver Transplantation</option>
+                <option value="Brain Surgery" ${pilgrim.medicalCondition === 'Brain Surgery' ? 'selected' : ''}>Brain Surgery</option>
+                <option value="Cancer" ${pilgrim.medicalCondition === 'Cancer' ? 'selected' : ''}>Cancer</option>
+                <option value="Spine Surgery (Unable to Walk)" ${pilgrim.medicalCondition === 'Spine Surgery (Unable to Walk)' ? 'selected' : ''}>Spine Surgery (Unable to Walk)</option>
+                <option value="Other" ${pilgrim.medicalCondition === 'Other' ? 'selected' : ''}>Other</option>
+              </select>
+            </div>
+
+            <div class="form-group full-width">
+              <label>Last Special Darshan Date (90-Day Cooldown Check)</label>
+              <input type="date" class="input-last-darshan-date" value="${pilgrim.lastSpecialDarshanDate || ''}">
+              ${cooldownInfo?.inCooldown ? `<span class="cooldown-badge">${cooldownInfo.message}</span>` : ''}
+            </div>
+
+            <!-- Attendant Config -->
+            <div class="form-group full-width" style="border-top: 1px solid var(--border-color); padding-top: 8px;">
+              <label style="display:flex; align-items:center; gap:6px; cursor:pointer;">
+                <input type="checkbox" class="check-attendant-required" ${currentProfile.attendantConfig?.requiresAttendant ? 'checked' : ''}>
+                <span>Enable Attendant / Companion (Max 1 Person)</span>
+              </label>
+              <div class="attendant-options-box" style="display: ${currentProfile.attendantConfig?.requiresAttendant ? 'block' : 'none'}; margin-top:6px;">
+                <label>Companion Relationship:</label>
+                <select class="select-companion-rel" style="margin-top:2px;">
+                  <option value="Spouse" ${(currentProfile.attendantConfig?.companionRelationship || 'Spouse') === 'Spouse' ? 'selected' : ''}>Spouse</option>
+                  <option value="Dependent Caretaker (Severe Illness / 80+)" ${currentProfile.attendantConfig?.companionRelationship === 'Dependent Caretaker (Severe Illness / 80+)' ? 'selected' : ''}>Dependent Caretaker (Severe Illness / 80+)</option>
+                  <option value="Other" ${currentProfile.attendantConfig?.companionRelationship === 'Other' ? 'selected' : ''}>Other</option>
+                </select>
+                ${(currentProfile.attendantConfig?.companionRelationship && currentProfile.attendantConfig.companionRelationship !== 'Spouse') ? `
+                  <div class="spouse-advisory">
+                    ⚠️ TTD's official rule allows Only Spouse as attendant (exceptions apply only to severe illness/mental disability or 80+ cases with prior verification).
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+
+            <!-- Documents Upload Section (< 1 MB strict) -->
+            <div class="form-group full-width" style="border-top: 1px solid var(--border-color); padding-top: 8px;">
+              <label><strong>Stored Proof Documents (&lt; 1 MB Local Encrypted)</strong></label>
+
+              <!-- Aadhaar / ID Proof Doc -->
+              <div class="doc-upload-box">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <span style="font-weight:600; font-size:11px;">1. Aadhaar / ID Proof Doc:</span>
+                  <span class="doc-status-badge ${pilgrim.proofDocuments?.idProofDoc ? 'attached' : 'empty'}">
+                    ${pilgrim.proofDocuments?.idProofDoc ? `✓ ${pilgrim.proofDocuments.idProofDoc.fileName} (${Math.round(pilgrim.proofDocuments.idProofDoc.sizeBytes/1024)} KB / 1024 KB max)` : 'No file attached'}
+                  </span>
+                </div>
+                <input type="file" class="file-input-aadhaar" accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+                <div style="display:flex; gap:6px; margin-top:4px;">
+                  <button type="button" class="btn-sec small btn-choose-aadhaar">📁 Choose &lt;1MB File</button>
+                  ${pilgrim.proofDocuments?.idProofDoc ? `<button type="button" class="btn-sec small danger btn-remove-aadhaar">✕ Remove</button>` : ''}
+                </div>
+              </div>
+
+              <!-- Certificate / Medical Doc -->
+              <div class="doc-upload-box">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                  <span style="font-weight:600; font-size:11px;">2. Disability / Medical Certificate:</span>
+                  <span class="doc-status-badge ${pilgrim.proofDocuments?.categoryCertificateDoc ? 'attached' : 'empty'}">
+                    ${pilgrim.proofDocuments?.categoryCertificateDoc ? `✓ ${pilgrim.proofDocuments.categoryCertificateDoc.fileName} (${Math.round(pilgrim.proofDocuments.categoryCertificateDoc.sizeBytes/1024)} KB / 1024 KB max)` : 'No file attached'}
+                  </span>
+                </div>
+                <input type="file" class="file-input-cert" accept=".pdf,.jpg,.jpeg,.png" style="display:none;">
+                <div style="display:flex; gap:6px; margin-top:4px;">
+                  <button type="button" class="btn-sec small btn-choose-cert">📁 Choose &lt;1MB File</button>
+                  ${pilgrim.proofDocuments?.categoryCertificateDoc ? `<button type="button" class="btn-sec small danger btn-remove-cert">✕ Remove</button>` : ''}
+                </div>
+              </div>
+
+            </div>
+          </div>
+        </details>
+      `;
+    }
 
     card.innerHTML = `
       <div class="pilgrim-card-header">
@@ -541,6 +739,7 @@ function renderPilgrims(): void {
           <input type="text" class="input-gothram" value="${pilgrim.gothram || ''}" placeholder="e.g. Kasyapa, Bharadwaja">
         </div>
       </div>
+      ${specialDarshanHtml}
     `;
 
     // Pilgrim Event Listeners
@@ -622,6 +821,163 @@ function renderPilgrims(): void {
       pilgrim.gothram = inputGothram.value.trim();
       scheduleAutoSave();
     });
+
+    // Special Darshan & Documents Listeners (Primary Pilgrim only)
+    if (idx === 0) {
+      const selectSpecialCat = card.querySelector('.select-special-category') as HTMLSelectElement | null;
+      const inputDob = card.querySelector('.input-dob') as HTMLInputElement | null;
+      const selectDisabilityType = card.querySelector('.select-disability-type') as HTMLSelectElement | null;
+      const inputDisabilityPct = card.querySelector('.input-disability-percentage') as HTMLInputElement | null;
+      const inputUdidNum = card.querySelector('.input-udid-number') as HTMLInputElement | null;
+      const selectMedicalCond = card.querySelector('.select-medical-condition') as HTMLSelectElement | null;
+      const inputLastDarshanDate = card.querySelector('.input-last-darshan-date') as HTMLInputElement | null;
+      const checkAttendantReq = card.querySelector('.check-attendant-required') as HTMLInputElement | null;
+      const selectCompanionRel = card.querySelector('.select-companion-rel') as HTMLSelectElement | null;
+
+      selectSpecialCat?.addEventListener('change', () => {
+        pilgrim.specialCategory = selectSpecialCat.value as any;
+        renderPilgrims();
+        scheduleAutoSave();
+        updateReadiness();
+      });
+
+      inputDob?.addEventListener('input', () => {
+        pilgrim.dob = inputDob.value.trim();
+        scheduleAutoSave();
+      });
+
+      selectDisabilityType?.addEventListener('change', () => {
+        pilgrim.disabilityType = selectDisabilityType.value as any;
+        scheduleAutoSave();
+        updateReadiness();
+      });
+
+      inputDisabilityPct?.addEventListener('input', () => {
+        const val = inputDisabilityPct.value === '' ? undefined : parseInt(inputDisabilityPct.value, 10);
+        pilgrim.disabilityPercentage = val;
+        scheduleAutoSave();
+        updateReadiness();
+      });
+
+      inputUdidNum?.addEventListener('input', () => {
+        pilgrim.certificateOrUdidNumber = inputUdidNum.value.trim();
+        scheduleAutoSave();
+      });
+
+      selectMedicalCond?.addEventListener('change', () => {
+        pilgrim.medicalCondition = selectMedicalCond.value as any;
+        scheduleAutoSave();
+        updateReadiness();
+      });
+
+      inputLastDarshanDate?.addEventListener('change', () => {
+        pilgrim.lastSpecialDarshanDate = inputLastDarshanDate.value;
+        renderPilgrims();
+        scheduleAutoSave();
+        updateReadiness();
+      });
+
+      checkAttendantReq?.addEventListener('change', () => {
+        if (!activeProfile!.attendantConfig) {
+          activeProfile!.attendantConfig = { requiresAttendant: false, companionRelationship: 'Spouse' };
+        }
+        activeProfile!.attendantConfig.requiresAttendant = checkAttendantReq.checked;
+        renderPilgrims();
+        scheduleAutoSave();
+        updateReadiness();
+      });
+
+      selectCompanionRel?.addEventListener('change', () => {
+        if (!activeProfile!.attendantConfig) {
+          activeProfile!.attendantConfig = { requiresAttendant: false, companionRelationship: 'Spouse' };
+        }
+        activeProfile!.attendantConfig.companionRelationship = selectCompanionRel.value as any;
+        renderPilgrims();
+        scheduleAutoSave();
+        updateReadiness();
+      });
+
+      // Document Uploads
+      const fileInputAadhaar = card.querySelector('.file-input-aadhaar') as HTMLInputElement | null;
+      const btnChooseAadhaar = card.querySelector('.btn-choose-aadhaar') as HTMLButtonElement | null;
+      const btnRemoveAadhaar = card.querySelector('.btn-remove-aadhaar') as HTMLButtonElement | null;
+
+      const fileInputCert = card.querySelector('.file-input-cert') as HTMLInputElement | null;
+      const btnChooseCert = card.querySelector('.btn-choose-cert') as HTMLButtonElement | null;
+      const btnRemoveCert = card.querySelector('.btn-remove-cert') as HTMLButtonElement | null;
+
+      const processDocFile = async (file: File, docKey: 'idProofDoc' | 'categoryCertificateDoc') => {
+        if (!pilgrim.proofDocuments) pilgrim.proofDocuments = {};
+
+        const isImage = file.type.startsWith('image/');
+        const isPdf = file.type === 'application/pdf';
+
+        if (!isImage && !isPdf) {
+          alert('Invalid file format. Please upload a PDF, JPEG, or PNG file.');
+          return;
+        }
+
+        // If image is over 900 KB, automatically compress via canvas
+        if (isImage && file.size > 900 * 1024) {
+          try {
+            const compressed = await compressImage(file);
+            pilgrim.proofDocuments[docKey] = compressed;
+            renderPilgrims();
+            scheduleAutoSave();
+            updateReadiness();
+            return;
+          } catch (e) {
+            console.warn('Canvas compression error, checking file size:', e);
+          }
+        }
+
+        // Validate size < 1 MB
+        if (file.size >= MAX_DOC_SIZE_BYTES) {
+          alert(`File is too large (${(file.size / 1024).toFixed(0)} KB). Maximum allowed size is 1024 KB (1 MB). Please choose a smaller file.`);
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const cleanBase64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+          pilgrim.proofDocuments![docKey] = {
+            fileName: file.name,
+            mimeType: file.type as any,
+            sizeBytes: file.size,
+            base64Data: cleanBase64
+          };
+          renderPilgrims();
+          scheduleAutoSave();
+          updateReadiness();
+        };
+        reader.readAsDataURL(file);
+      };
+
+      btnChooseAadhaar?.addEventListener('click', () => fileInputAadhaar?.click());
+      fileInputAadhaar?.addEventListener('change', () => {
+        const file = fileInputAadhaar.files?.[0];
+        if (file) processDocFile(file, 'idProofDoc');
+      });
+      btnRemoveAadhaar?.addEventListener('click', () => {
+        if (pilgrim.proofDocuments) delete pilgrim.proofDocuments.idProofDoc;
+        renderPilgrims();
+        scheduleAutoSave();
+        updateReadiness();
+      });
+
+      btnChooseCert?.addEventListener('click', () => fileInputCert?.click());
+      fileInputCert?.addEventListener('change', () => {
+        const file = fileInputCert.files?.[0];
+        if (file) processDocFile(file, 'categoryCertificateDoc');
+      });
+      btnRemoveCert?.addEventListener('click', () => {
+        if (pilgrim.proofDocuments) delete pilgrim.proofDocuments.categoryCertificateDoc;
+        renderPilgrims();
+        scheduleAutoSave();
+        updateReadiness();
+      });
+    }
 
     pilgrimsContainer.appendChild(card);
   });

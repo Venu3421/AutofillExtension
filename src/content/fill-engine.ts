@@ -1,6 +1,51 @@
 import { DetectedElement, DetectedFormState } from './field-detector';
 import { formatAadhaarChunks } from '../validation/validators';
 
+/**
+ * Reconstructs a File object from Base64 data for DataTransfer assignment to <input type="file">.
+ */
+export function base64ToFile(base64Data: string, fileName: string, mimeType: string): File {
+  const cleanBase64 = base64Data.includes(',') ? base64Data.split(',')[1] : base64Data;
+  const byteChars = atob(cleanBase64);
+  const byteArrays = new Uint8Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) {
+    byteArrays[i] = byteChars.charCodeAt(i);
+  }
+  const blob = new Blob([byteArrays], { type: mimeType });
+  return new File([blob], fileName, { type: mimeType });
+}
+
+/**
+ * Formats a Date of Birth string (YYYY-MM-DD or DD-MM-YYYY) to match the target input's requirements.
+ */
+export function formatDobForInput(dob: string, el: HTMLElement): string {
+  if (!dob) return '';
+  const clean = dob.trim();
+  const isDateInput = el instanceof HTMLInputElement && el.type === 'date';
+  let y = '', m = '', d = '';
+  if (/^\d{4}[-/]\d{1,2}[-/]\d{1,2}$/.test(clean)) {
+    const parts = clean.split(/[-/]/);
+    y = parts[0];
+    m = parts[1].padStart(2, '0');
+    d = parts[2].padStart(2, '0');
+  } else if (/^\d{1,2}[-/]\d{1,2}[-/]\d{4}$/.test(clean)) {
+    const parts = clean.split(/[-/]/);
+    d = parts[0].padStart(2, '0');
+    m = parts[1].padStart(2, '0');
+    y = parts[2];
+  }
+
+  if (y && m && d) {
+    if (isDateInput) return `${y}-${m}-${d}`;
+    const ph = el.getAttribute('placeholder') || '';
+    if (/dd[-/]mm[-/]yyyy/i.test(ph) || /dd/i.test(ph)) {
+      return `${d}-${m}-${y}`;
+    }
+    return `${y}-${m}-${d}`;
+  }
+  return clean;
+}
+
 export interface AuditResultItem {
   fieldKey: string;
   label: string;
@@ -38,7 +83,18 @@ export function setNativeInputValue(el: HTMLElement, value: string): void {
         for (const r of radios) {
           const rVal = (r.value || '').trim().toLowerCase();
           const rLabel = (r.labels?.[0]?.textContent || r.parentElement?.textContent || '').trim().toLowerCase();
-          if (rVal === target || rLabel.includes(target) || (target === 'male' && rVal === 'm') || (target === 'female' && rVal === 'f')) {
+          const isMatch = rVal === target ||
+            rLabel === target ||
+            rLabel.includes(target) ||
+            target.includes(rLabel) ||
+            (target === 'yes' && (rVal === 'yes' || rVal === 'y' || rVal === '1' || rLabel.includes('yes'))) ||
+            (target === 'no' && (rVal === 'no' || rVal === 'n' || rVal === '0' || rLabel.includes('no'))) ||
+            (target === 'male' && (rVal === 'm' || rLabel.includes('male'))) ||
+            (target === 'female' && (rVal === 'f' || rLabel.includes('female'))) ||
+            (target.includes('differently') && (rVal.includes('differently') || rVal.includes('pwd') || rVal.includes('ph') || rLabel.includes('differently') || rLabel.includes('pwd') || rLabel.includes('ph'))) ||
+            (target.includes('senior') && (rVal.includes('senior') || rVal.includes('aged') || rLabel.includes('senior') || rLabel.includes('aged'))) ||
+            (target.includes('medical') && (rVal.includes('medical') || rLabel.includes('medical')));
+          if (isMatch) {
             matchedRadio = r;
             break;
           }
@@ -46,6 +102,10 @@ export function setNativeInputValue(el: HTMLElement, value: string): void {
       }
 
       const radioToClick = matchedRadio || el;
+      if (radioName) {
+        const allRadios = Array.from(document.querySelectorAll<HTMLInputElement>(`input[type="radio"][name="${CSS.escape(radioName)}"]`));
+        allRadios.forEach(r => { if (r !== radioToClick) r.checked = false; });
+      }
       try { radioToClick.focus(); } catch (e) {}
       radioToClick.checked = true;
       radioToClick.dispatchEvent(new Event('input', { bubbles: true, cancelable: true }));
@@ -230,11 +290,11 @@ export async function setAnySelectValue(el: HTMLElement, targetValue: string): P
     return setNativeSelectValue(el as HTMLSelectElement, targetValue);
   }
 
-  // React / Angular / Custom combobox
+  // React / Angular / Material-UI / Custom combobox
   try {
-    const trigger = (el.matches('button, [role="button"], [role="combobox"], [aria-haspopup]')
+    const trigger = (el.matches('button, [role="button"], [role="combobox"], [aria-haspopup], .MuiSelect-select, div[tabindex]')
       ? el
-      : el.querySelector<HTMLElement>('button, [role="button"], [role="combobox"], [aria-haspopup], svg') || el);
+      : el.querySelector<HTMLElement>('button, [role="button"], [role="combobox"], [aria-haspopup], .MuiSelect-select, svg, div[tabindex]') || el);
 
     try { trigger.focus(); } catch (e) {}
     trigger.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, cancelable: true }));
@@ -242,12 +302,38 @@ export async function setAnySelectValue(el: HTMLElement, targetValue: string): P
     trigger.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
     trigger.click();
 
-    await new Promise(r => setTimeout(r, 150));
+    // Poll for options to render in DOM (up to 450ms)
+    const OPTION_SELECTOR = [
+      'mat-option',
+      '.mat-option',
+      '.mat-mdc-option',
+      '[role="option"]',
+      'li[role="option"]',
+      '[role="menuitem"]',
+      '.select-item',
+      '[data-radix-collection-item]',
+      'ul > li',
+      '.dropdown-item',
+      '.dropdown-menu a',
+      '.dropdown-menu li',
+      '.MuiMenuItem-root',
+      '.MuiButtonBase-root',
+      '.MuiAutocomplete-option',
+      '.ant-select-item-option-content',
+      '.ant-select-item',
+      'div[class*="option" i]',
+      'span[class*="option" i]',
+      'div[class*="menu" i] > div',
+      'div[role="listbox"] > *'
+    ].join(', ');
 
-    // Options can be mat-option, [role="option"], li, div[role="option"], or custom dropdown items
-    const options = Array.from(document.querySelectorAll<HTMLElement>(
-      'mat-option, .mat-option, .mat-mdc-option, [role="option"], li[role="option"], [role="menuitem"], .select-item, [data-radix-collection-item], ul > li, .dropdown-item, .dropdown-menu a, .dropdown-menu li, .MuiMenuItem-root, .MuiAutocomplete-option, .ant-select-item-option-content, .ant-select-item, div[class*="option" i], span[class*="option" i]'
-    ));
+    let options: HTMLElement[] = [];
+    const startTime = Date.now();
+    while (Date.now() - startTime < 450) {
+      options = Array.from(document.querySelectorAll<HTMLElement>(OPTION_SELECTOR));
+      if (options.length > 0) break;
+      await new Promise(r => setTimeout(r, 40));
+    }
 
     const cleanTarget = targetValue.trim().toLowerCase();
     const isMale = cleanTarget === 'male' || cleanTarget === 'm';
@@ -262,7 +348,8 @@ export async function setAnySelectValue(el: HTMLElement, targetValue: string): P
       const text = (opt.textContent || '').trim().toLowerCase();
       if (!text) continue;
 
-      if (isMale && (text === 'male' || text.includes('male') || text.includes('పురుషుడు') || text === 'm')) {
+      // CRITICAL FIX: "female" contains "male"! Must check !text.includes('female') when matching Male!
+      if (isMale && (text === 'male' || (text.includes('male') && !text.includes('female')) || text.includes('పురుషుడు') || text === 'm')) {
         matchedOpt = opt;
         break;
       }
@@ -278,7 +365,7 @@ export async function setAnySelectValue(el: HTMLElement, targetValue: string): P
         matchedOpt = opt;
         break;
       }
-      if (isVoter && /voter/i.test(text)) {
+      if (isVoter && (/voter/i.test(text) || /epic/i.test(text))) {
         matchedOpt = opt;
         break;
       }
@@ -295,16 +382,33 @@ export async function setAnySelectValue(el: HTMLElement, targetValue: string): P
       matchedOpt.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
       matchedOpt.click();
 
-      // Check if container has a hidden input associated with this dropdown
-      const container = el.closest('.form-group, .form-item, .col, div') || el.parentElement;
-      if (container) {
-        const hiddenInput = container.querySelector<HTMLInputElement>('input[type="hidden"], input.MuiSelect-nativeInput');
-        if (hiddenInput) {
-          setNativeInputValue(hiddenInput, targetValue);
+      // Update trigger text / label display so visual state and audit are immediately synchronized
+      if (trigger && matchedOpt.textContent) {
+        const textNode = Array.from(trigger.childNodes).find(n => n.nodeType === 3 && n.textContent?.trim());
+        if (textNode) {
+          textNode.textContent = matchedOpt.textContent.trim();
+        } else {
+          const innerSpanOrDiv = trigger.querySelector('span, div');
+          if (innerSpanOrDiv && !innerSpanOrDiv.querySelector('svg')) {
+            innerSpanOrDiv.textContent = matchedOpt.textContent.trim();
+          } else {
+            trigger.textContent = matchedOpt.textContent.trim();
+          }
         }
       }
 
-      await new Promise(r => setTimeout(r, 80));
+      // Check if container has a hidden input associated with this dropdown (e.g. Material-UI MuiSelect-nativeInput)
+      const container = el.closest('.MuiFormControl-root, .form-group, .form-item, .col, div') || el.parentElement;
+      if (container) {
+        const hiddenInput = container.querySelector<HTMLInputElement>('input[type="hidden"], input.MuiSelect-nativeInput');
+        if (hiddenInput) {
+          const valToSet = matchedOpt.getAttribute('data-value') || targetValue;
+          setNativeInputValue(hiddenInput, valToSet);
+        }
+      }
+
+      // Wait 200ms so React updates state, closes the menu overlay, and enables any dependent fields
+      await new Promise(r => setTimeout(r, 200));
       return true;
     }
 
@@ -343,12 +447,15 @@ export async function executeTier1Autofill(
   const radioInputs: DetectedElement[] = [];
   const nativeSelects: DetectedElement[] = [];
   const customSelects: DetectedElement[] = [];
+  const fileInputs: DetectedElement[] = [];
 
   for (const item of elements) {
     if (!item.targetValue) continue;
     const el = item.element;
 
-    if (el instanceof HTMLInputElement && el.type === 'radio') {
+    if (el instanceof HTMLInputElement && el.type === 'file') {
+      fileInputs.push(item);
+    } else if (el instanceof HTMLInputElement && el.type === 'radio') {
       radioInputs.push(item);
     } else if (el.tagName === 'SELECT') {
       nativeSelects.push(item);
@@ -373,7 +480,12 @@ export async function executeTier1Autofill(
 
   // 1. FILL ALL INITIAL TEXT & NUMBER INPUTS FIRST (Instant, zero overlays, updates Angular & React FormControls)
   for (const item of initialTextInputs) {
-    setNativeInputValue(item.element, item.targetValue);
+    if (item.fieldKey.includes('dob')) {
+      const formatted = formatDobForInput(item.targetValue, item.element);
+      setNativeInputValue(item.element, formatted);
+    } else {
+      setNativeInputValue(item.element, item.targetValue);
+    }
     options.onProgress?.(item);
   }
 
@@ -397,21 +509,22 @@ export async function executeTier1Autofill(
 
   // 5. CRITICAL FOR REACT/NEXT.JS & ANGULAR SPAs:
   // Selecting "Photo ID Proof" (Aadhaar/Passport) triggers component state update to enable "Photo ID Number".
-  // Wait 200ms for React state re-render to complete.
+  // Wait 250ms for React state re-render to complete.
   if (idNumberInputs.length > 0) {
-    await new Promise(r => setTimeout(r, 200));
+    await new Promise(r => setTimeout(r, 250));
 
     for (const item of idNumberInputs) {
       let targetInput = item.element as HTMLInputElement;
 
-      // If the input was replaced or is still disabled in React state, re-check or ensure enabled
+      // If the input was replaced or is still disabled in React state, look for refreshed input matching idNumber pattern
       if (!targetInput.isConnected || targetInput.disabled) {
-        // Look for refreshed or newly enabled input in the same devotee card/container or by matching label
-        const container = targetInput.closest('.form-group, .form-item, .devotee-card, .pilgrim-card, div') || targetInput.parentElement;
+        const container = targetInput.closest('.form-group, .form-item, .devotee-card, .pilgrim-card, .MuiFormControl-root, div') || targetInput.parentElement;
         if (container) {
-          const fresh = container.querySelector<HTMLInputElement>('input:not([type="hidden"])');
-          if (fresh && fresh !== targetInput) {
-            targetInput = fresh;
+          const inputs = Array.from(container.querySelectorAll<HTMLInputElement>('input:not([type="hidden"])'));
+          // Find input associated with ID Number label, NEVER blindly pick the first input (which could be Name)!
+          const idInput = inputs.find(inp => /id[\s_-]*(?:no|number|card|num)|photo[\s_-]*id|aadha?r|passport|voter|pan/i.test(inp.name + ' ' + inp.id + ' ' + inp.placeholder + ' ' + (inp.getAttribute('aria-label') || ''))) || inputs[inputs.length - 1];
+          if (idInput && idInput.isConnected) {
+            targetInput = idInput;
           }
         }
       }
@@ -423,6 +536,24 @@ export async function executeTier1Autofill(
       setNativeInputValue(targetInput, item.targetValue);
       options.onProgress?.(item);
     }
+  }
+
+  // 5b. FILL FILE INPUTS via DataTransfer
+  for (const item of fileInputs) {
+    const fileInput = item.element as HTMLInputElement;
+    if (item.doc && item.doc.base64Data) {
+      try {
+        const file = base64ToFile(item.doc.base64Data, item.doc.fileName, item.doc.mimeType);
+        const dt = new DataTransfer();
+        dt.items.add(file);
+        fileInput.files = dt.files;
+        fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+        fileInput.dispatchEvent(new Event('input', { bubbles: true }));
+      } catch (err) {
+        console.warn('[Pilgrim QuickFill] Failed attaching file via DataTransfer:', err);
+      }
+    }
+    options.onProgress?.(item);
   }
 
   // 6. Initial Audit at 250ms
@@ -491,18 +622,63 @@ export function runPostFillAudit(elements: DetectedElement[]): AuditReport {
     const el = item.element;
     let actualValue = '';
 
-    if (el instanceof HTMLInputElement && el.type === 'radio') {
+    if (el instanceof HTMLInputElement && el.type === 'file') {
+      const fileInput = el as HTMLInputElement;
+      const hasFile = !!(fileInput.files && fileInput.files.length > 0);
+      actualValue = hasFile ? fileInput.files![0].name : '';
+      if (hasFile) {
+        successCount++;
+        items.push({
+          fieldKey: item.fieldKey,
+          label: item.label || item.fieldKey,
+          expectedValue: item.targetValue,
+          actualValue,
+          status: 'success'
+        });
+      } else {
+        failureCount++;
+        items.push({
+          fieldKey: item.fieldKey,
+          label: item.label || item.fieldKey,
+          expectedValue: item.targetValue,
+          actualValue: '',
+          status: 'cleared',
+          errorMessage: 'File not attached to input'
+        });
+      }
+      continue;
+    } else if (el instanceof HTMLInputElement && el.type === 'radio') {
       const radioName = el.name;
-      const checked = radioName
-        ? document.querySelector<HTMLInputElement>(`input[type="radio"][name="${CSS.escape(radioName)}"]:checked`)
-        : (el.checked ? el : null);
+      let checked: HTMLInputElement | null = null;
+      if (radioName) {
+        const radios = Array.from(document.querySelectorAll<HTMLInputElement>(`input[type="radio"][name="${CSS.escape(radioName)}"]`));
+        checked = radios.find(r => r.checked) || null;
+      } else {
+        checked = el.checked ? el : null;
+      }
       actualValue = checked ? (checked.value || checked.labels?.[0]?.textContent?.trim() || 'selected') : '';
     } else if (el.tagName === 'SELECT') {
       const select = el as HTMLSelectElement;
       const opt = select.options[select.selectedIndex];
       actualValue = opt ? opt.text.trim() || opt.value.trim() : '';
-    } else if (el.tagName === 'MAT-SELECT' || el.getAttribute('role') === 'combobox') {
+    } else if (
+      el.tagName === 'MAT-SELECT' ||
+      el.getAttribute('role') === 'combobox' ||
+      el.getAttribute('role') === 'button' ||
+      el.tagName === 'BUTTON' ||
+      el.hasAttribute('aria-haspopup') ||
+      el.classList.contains('MuiSelect-select') ||
+      (el.matches && el.matches('div[class*="select" i]')) ||
+      el.getAttribute('tabindex') !== null
+    ) {
       actualValue = el.textContent?.trim() || '';
+      const container = el.closest('.MuiFormControl-root, .form-group, .form-item, .col, div') || el.parentElement;
+      if (container) {
+        const hiddenInput = container.querySelector<HTMLInputElement>('input[type="hidden"], input.MuiSelect-nativeInput');
+        if (hiddenInput && hiddenInput.value) {
+          actualValue = actualValue || hiddenInput.value;
+        }
+      }
     } else {
       actualValue = (el as HTMLInputElement).value?.trim() || '';
     }
@@ -524,15 +700,41 @@ export function runPostFillAudit(elements: DetectedElement[]): AuditReport {
       failureCount++;
     } else if (el instanceof HTMLInputElement && el.type === 'radio') {
       // Radio matched if checked value or label matches
-      if (cleanActual === cleanExpected || cleanActual.includes(cleanExpected) || (cleanExpected === 'male' && cleanActual === 'm') || (cleanExpected === 'female' && cleanActual === 'f')) {
+      const isRadioMatch = cleanActual === cleanExpected ||
+        cleanActual.includes(cleanExpected) ||
+        cleanExpected.includes(cleanActual) ||
+        (cleanExpected === 'yes' && (cleanActual === 'yes' || cleanActual === 'y' || cleanActual === '1')) ||
+        (cleanExpected === 'no' && (cleanActual === 'no' || cleanActual === 'n' || cleanActual === '0')) ||
+        (cleanExpected === 'male' && cleanActual === 'm') ||
+        (cleanExpected === 'female' && cleanActual === 'f');
+      if (isRadioMatch) {
         successCount++;
       } else {
         status = 'mismatch';
         errorMessage = `Selected "${actualValue}", expected "${item.targetValue}"`;
         failureCount++;
       }
-    } else if (el.tagName === 'SELECT' || el.tagName === 'MAT-SELECT' || el.getAttribute('role') === 'combobox') {
-      if (!cleanActual.includes(cleanExpected) && !cleanExpected.includes(cleanActual)) {
+    } else if (
+      el.tagName === 'SELECT' ||
+      el.tagName === 'MAT-SELECT' ||
+      el.getAttribute('role') === 'combobox' ||
+      el.getAttribute('role') === 'button' ||
+      el.tagName === 'BUTTON' ||
+      el.classList.contains('MuiSelect-select') ||
+      (el.matches && el.matches('div[class*="select" i]')) ||
+      el.getAttribute('tabindex') !== null
+    ) {
+      const isAadhaar = /aadha?r/i.test(cleanExpected) && /aadha?r/i.test(cleanActual);
+      const isMale = (cleanExpected === 'male' || cleanExpected === 'm') && (cleanActual === 'male' || (cleanActual.includes('male') && !cleanActual.includes('female')) || cleanActual.includes('పురుషుడు'));
+      const isFemale = (cleanExpected === 'female' || cleanExpected === 'f') && (cleanActual === 'female' || cleanActual.includes('female') || cleanActual.includes('స్త్రీ'));
+      const isMatch = cleanActual === cleanExpected ||
+        cleanActual.includes(cleanExpected) ||
+        cleanExpected.includes(cleanActual) ||
+        isAadhaar ||
+        isMale ||
+        isFemale;
+
+      if (!isMatch) {
         status = 'mismatch';
         errorMessage = `Selected "${actualValue}", expected "${item.targetValue}"`;
         failureCount++;

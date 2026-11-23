@@ -90,12 +90,8 @@ async function loadState(): Promise<void> {
   if (appState.settings.customFieldMappings && appState.settings.customFieldMappings.length > 0) {
     const initialLen = appState.settings.customFieldMappings.length;
     appState.settings.customFieldMappings = appState.settings.customFieldMappings.filter(m => {
-      // Discard mappings that captured background container DIVs or whole sections
-      if (m.selector.includes('div#__next') && !m.selector.endsWith('input') && !m.selector.endsWith('select')) return false;
-      // Discard mappings that mapped Gothram to fullName
+      // Discard accidental mappings that mapped Gothram to fullName
       if (m.fieldKey.includes('fullName') && (m.selector.includes('Gothram') || m.meta?.name === 'pilgrimGothram')) return false;
-      // Discard multiple mappings mapping to pilgrim_0_fullName on the live domain
-      if (m.domainPath?.includes('ttdevasthanams.ap.gov.in') && m.fieldKey === 'pilgrim_0_fullName') return false;
       return true;
     });
 
@@ -118,7 +114,7 @@ function rescanDOM(): void {
   if (!activeProfile) return;
 
   const mappings = appState.settings.customFieldMappings || [];
-  currentFormState = scanForm(activeProfile.pilgrims, activeProfile.general, mappings);
+  currentFormState = scanForm(activeProfile.pilgrims, activeProfile.general, mappings, activeProfile);
 
   if (floatingPanel && activeProfile) {
     floatingPanel.update(activeProfile, appState.settings, currentFormState);

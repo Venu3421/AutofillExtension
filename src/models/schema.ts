@@ -1,6 +1,44 @@
 export type Gender = 'Male' | 'Female' | 'Transgender';
 export type IdProofType = 'Aadhaar' | 'Passport' | 'Voter ID' | 'Driving License' | 'PAN';
 
+export interface StoredDoc {
+  fileName: string;
+  mimeType: 'application/pdf' | 'image/jpeg' | 'image/png';
+  sizeBytes: number;
+  base64Data: string;
+}
+
+export type SpecialCategory = 'Differently Abled' | 'Senior Citizen' | 'Medical Cases';
+
+export type DisabilityType =
+  | 'Orthopedic / Locomotor'
+  | 'Visual Impairment'
+  | 'Hearing Impairment'
+  | 'Mental / Intellectual'
+  | 'Speech & Language'
+  | 'Multiple Disabilities'
+  | 'Other';
+
+export type MedicalCondition =
+  | 'Kidney Transplantation'
+  | 'Open Heart Surgery'
+  | 'Dialysis'
+  | 'Liver Transplantation'
+  | 'Brain Surgery'
+  | 'Cancer'
+  | 'Spine Surgery (Unable to Walk)'
+  | 'Other';
+
+export type CompanionRelationship =
+  | 'Spouse'
+  | 'Dependent Caretaker (Severe Illness / 80+)'
+  | 'Other';
+
+export interface AttendantConfig {
+  requiresAttendant: boolean;
+  companionRelationship: CompanionRelationship;
+}
+
 export interface Pilgrim {
   id: string;
   fullName: string;
@@ -11,6 +49,19 @@ export interface Pilgrim {
   gothram?: string;
   photoDataUrl?: string; // Base64 JPEG <= 150KB
   included: boolean; // Whether included in current booking
+
+  // Special Category Fields (Differently Abled / Sr. Citizen / Medical)
+  dob?: string; // YYYY-MM-DD or DD-MM-YYYY
+  specialCategory?: SpecialCategory;
+  disabilityType?: DisabilityType;
+  disabilityPercentage?: number; // 1-100
+  certificateOrUdidNumber?: string;
+  medicalCondition?: MedicalCondition;
+  lastSpecialDarshanDate?: string; // ISO date string (YYYY-MM-DD)
+  proofDocuments?: {
+    idProofDoc?: StoredDoc;
+    categoryCertificateDoc?: StoredDoc;
+  };
 }
 
 export interface GeneralDetails {
@@ -34,12 +85,13 @@ export interface VolunteerDetails {
 }
 
 export type BookingPreset = 
-  | 'sed300'       // Special Entry Darshan ₹300 (max 6)
-  | 'srivani'      // SRIVANI Trust Break Darshan (default max 4, paste blocked)
-  | 'arjitha'      // Arjitha Seva / Electronic DIP (max 2)
-  | 'accommodation'// Accommodation (min 2 occupants)
-  | 'srivari_seva' // Srivari Seva Group Volunteer
-  | 'homam';       // Sri Srinivasa Divyanugraha Homam (needs Gothram)
+  | 'sed300'                 // Special Entry Darshan ₹300 (max 6)
+  | 'srivani'                // SRIVANI Trust Break Darshan (default max 4, paste blocked)
+  | 'arjitha'                // Arjitha Seva / Electronic DIP (max 2)
+  | 'accommodation'          // Accommodation (min 2 occupants)
+  | 'srivari_seva'           // Srivari Seva Group Volunteer
+  | 'homam'                  // Sri Srinivasa Divyanugraha Homam (needs Gothram)
+  | 'SPECIAL_DISABILITY_AGED'; // Differently Abled / Sr. Citizen / Medical Cases (max 2: 1 Primary + 1 Attendant)
 
 export interface Profile {
   id: string;
@@ -48,6 +100,7 @@ export interface Profile {
   pilgrims: Pilgrim[];
   general: GeneralDetails;
   volunteer: VolunteerDetails;
+  attendantConfig?: AttendantConfig;
   createdAt: number;
   updatedAt: number;
 }
@@ -136,6 +189,10 @@ export function createDefaultProfile(name: string = 'Family'): Profile {
     ],
     general: { ...DEFAULT_GENERAL_DETAILS },
     volunteer: { ...DEFAULT_VOLUNTEER_DETAILS },
+    attendantConfig: {
+      requiresAttendant: false,
+      companionRelationship: 'Spouse'
+    },
     createdAt: Date.now(),
     updatedAt: Date.now()
   };

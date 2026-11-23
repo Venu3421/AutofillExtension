@@ -205,6 +205,9 @@
     <button class="scenario-tab" data-tab="tab-seva">
       4. Virtual Seva / Gruhastha Details (Live TTD Layout)
     </button>
+    <button class="scenario-tab" data-tab="tab-special">
+      5. Differently Abled / Sr. Citizen / Medical (2-Page SPA)
+    </button>
   </div>
 
   <!-- TAB 1: Special Entry Darshan -->
@@ -514,6 +517,91 @@
     </div>
   </div>
 
+  <!-- TAB 5: Differently Abled / Sr. Citizen / Medical Cases (2-Page SPA) -->
+  <div id="tab-special" class="tab-panel">
+    <div class="scenario-desc">
+      <strong>Scenario 5: Differently Abled / Sr. Citizen / Medical Cases (2-Page SPA)</strong><br>
+      • <strong>Page 1:</strong> Select Special Category (Differently Abled / Sr. Citizen / Medical), Attendant toggle (Yes/No), Disability Type, Disability %, or Medical Condition, then click "Continue to Pilgrim Details".<br>
+      • <strong>Dynamic SPA Transition:</strong> The SPA in-place updates the DOM from Page 1 to Page 2 without a full page reload.<br>
+      • <strong>Page 2:</strong> Primary Pilgrim fields (Name, Age, DOB, Gender, Photo ID Proof & Number), conditional Attendant fields (only rendered if Attendant is Yes), and two strict &lt;1 MB file upload controls with client-side verification!
+    </div>
+
+    <!-- SPA Container -->
+    <div id="special-spa-container">
+      <!-- Page 1 Container (default) -->
+      <div id="special-page-1" class="spa-page">
+        <div class="form-section">
+          <h3>Step 1: Category & Attendant Selection</h3>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="special-cat">Special Category *</label>
+              <select id="special-cat" name="specialCategory" class="special-controlled">
+                <option value="Differently Abled">Differently Abled</option>
+                <option value="Senior Citizen">Senior Citizen</option>
+                <option value="Medical Cases">Medical Cases</option>
+              </select>
+            </div>
+
+            <div class="form-group">
+              <label>Attendant / Companion Required? *</label>
+              <div style="display: flex; gap: 14px; align-items: center; margin-top: 6px;">
+                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal; cursor: pointer;">
+                  <input type="radio" name="attendant_required" value="Yes" class="special-controlled"> Yes
+                </label>
+                <label style="display: flex; align-items: center; gap: 4px; font-weight: normal; cursor: pointer;">
+                  <input type="radio" name="attendant_required" value="No" class="special-controlled" checked> No
+                </label>
+              </div>
+            </div>
+
+            <div class="form-group" id="group-disability-type">
+              <label for="special-disability-type">Disability Type *</label>
+              <select id="special-disability-type" name="disabilityType" class="special-controlled">
+                <option value="Orthopedic / Locomotor">Orthopedic / Locomotor</option>
+                <option value="Visual Impairment">Visual Impairment</option>
+                <option value="Hearing Impairment">Hearing Impairment</option>
+                <option value="Mental / Intellectual">Mental / Intellectual</option>
+                <option value="Speech & Language">Speech & Language</option>
+                <option value="Multiple Disabilities">Multiple Disabilities</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="group-disability-pct">
+              <label for="special-disability-pct">Disability Percentage (%)</label>
+              <input type="number" id="special-disability-pct" name="disabilityPercentage" class="special-controlled" min="1" max="100" placeholder="e.g. 40">
+            </div>
+
+            <div class="form-group" id="group-medical-cond" style="display: none;">
+              <label for="special-medical-cond">Medical Condition / Surgery *</label>
+              <select id="special-medical-cond" name="medicalCondition" class="special-controlled">
+                <option value="Kidney Transplantation">Kidney Transplantation</option>
+                <option value="Open Heart Surgery">Open Heart Surgery</option>
+                <option value="Dialysis">Dialysis</option>
+                <option value="Liver Transplantation">Liver Transplantation</option>
+                <option value="Brain Surgery">Brain Surgery</option>
+                <option value="Cancer">Cancer</option>
+                <option value="Spine Surgery (Unable to Walk)">Spine Surgery (Unable to Walk)</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div style="text-align: right; margin-top: 16px;">
+          <button type="button" class="btn-submit" id="btn-special-page1-continue">
+            Continue to Devotee Details ➔
+          </button>
+        </div>
+      </div>
+
+      <!-- Page 2 Container (Hidden initially until Page 1 Continue clicked) -->
+      <div id="special-page-2" class="spa-page" style="display: none;">
+        <!-- Injected dynamically on Continue click -->
+      </div>
+    </div>
+  </div>
+
   <script>
     // Scenario Tab Switching
     document.querySelectorAll('.scenario-tab').forEach(tab => {
@@ -684,6 +772,198 @@
 
     sevaContinueBtn?.addEventListener('click', () => {
       alert('🎉 Safe Continue Clicked! Virtual Seva / Gruhastha Details verified successfully.');
+    });
+
+    // --- Tab 5: Differently Abled / Sr. Citizen / Medical (2-Page SPA) Setup ---
+    const specialCatSelect = document.getElementById('special-cat');
+    const groupDisabilityType = document.getElementById('group-disability-type');
+    const groupDisabilityPct = document.getElementById('group-disability-pct');
+    const groupMedicalCond = document.getElementById('group-medical-cond');
+    const page1 = document.getElementById('special-page-1');
+    const page2 = document.getElementById('special-page-2');
+    const btnPage1Continue = document.getElementById('btn-special-page1-continue');
+
+    function updateSpecialCategoryFields() {
+      if (!specialCatSelect) return;
+      const cat = specialCatSelect.value;
+      if (cat === 'Medical Cases') {
+        if (groupDisabilityType) groupDisabilityType.style.display = 'none';
+        if (groupDisabilityPct) groupDisabilityPct.style.display = 'none';
+        if (groupMedicalCond) groupMedicalCond.style.display = 'flex';
+      } else if (cat === 'Senior Citizen') {
+        if (groupDisabilityType) groupDisabilityType.style.display = 'none';
+        if (groupDisabilityPct) groupDisabilityPct.style.display = 'none';
+        if (groupMedicalCond) groupMedicalCond.style.display = 'none';
+      } else {
+        if (groupDisabilityType) groupDisabilityType.style.display = 'flex';
+        if (groupDisabilityPct) groupDisabilityPct.style.display = 'flex';
+        if (groupMedicalCond) groupMedicalCond.style.display = 'none';
+      }
+    }
+
+    specialCatSelect?.addEventListener('change', updateSpecialCategoryFields);
+
+    btnPage1Continue?.addEventListener('click', () => {
+      const reqAttendant = (document.querySelector('input[name="attendant_required"]:checked') as HTMLInputElement)?.value === 'Yes';
+      const category = specialCatSelect ? specialCatSelect.value : 'Differently Abled';
+
+      if (page1) page1.style.display = 'none';
+      if (page2) {
+        page2.style.display = 'block';
+
+        page2.innerHTML = `
+          <div class="form-section">
+            <h3>Step 2: Primary Devotee Details (${category})</h3>
+            <div class="pilgrim-card pilgrim-row" data-pilgrim-index="0">
+              <h4>Primary Pilgrim</h4>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label for="special-p0-name">Pilgrim Name *</label>
+                  <input type="text" id="special-p0-name" name="pilgrim_0_name" class="special-controlled" placeholder="Full name on ID">
+                </div>
+                <div class="form-group">
+                  <label for="special-p0-age">Age *</label>
+                  <input type="number" id="special-p0-age" name="pilgrim_0_age" class="special-controlled" min="0" max="120" placeholder="Age">
+                </div>
+                <div class="form-group">
+                  <label for="special-p0-dob">Date of Birth *</label>
+                  <input type="date" id="special-p0-dob" name="pilgrim_0_dob" class="special-controlled">
+                </div>
+                <div class="form-group">
+                  <label for="special-p0-gender">Gender *</label>
+                  <select id="special-p0-gender" name="pilgrim_0_gender" class="special-controlled">
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                    <option value="Transgender">Transgender</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="special-p0-id-type">Photo ID Proof *</label>
+                  <select id="special-p0-id-type" name="pilgrim_0_id_type" class="special-controlled">
+                    <option value="Aadhaar">Aadhaar</option>
+                    <option value="Passport">Passport</option>
+                    <option value="Voter ID">Voter ID</option>
+                    <option value="Driving License">Driving License</option>
+                    <option value="PAN">PAN</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="special-p0-id-num">Photo ID Number *</label>
+                  <input type="text" id="special-p0-id-num" name="pilgrim_0_id_num" class="special-controlled" placeholder="ID Number">
+                </div>
+              </div>
+            </div>
+
+            ${reqAttendant ? `
+              <div class="pilgrim-card pilgrim-row" data-pilgrim-index="1" style="margin-top: 14px;">
+                <h4>Attendant / Companion Pilgrim</h4>
+                <div class="form-grid">
+                  <div class="form-group">
+                    <label for="special-p1-name">Attendant Name *</label>
+                    <input type="text" id="special-p1-name" name="pilgrim_1_name" class="special-controlled" placeholder="Full name on ID">
+                  </div>
+                  <div class="form-group">
+                    <label for="special-p1-age">Age *</label>
+                    <input type="number" id="special-p1-age" name="pilgrim_1_age" class="special-controlled" min="0" max="120" placeholder="Age">
+                  </div>
+                  <div class="form-group">
+                    <label for="special-p1-gender">Gender *</label>
+                    <select id="special-p1-gender" name="pilgrim_1_gender" class="special-controlled">
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Transgender">Transgender</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="special-p1-id-type">Photo ID Proof *</label>
+                    <select id="special-p1-id-type" name="pilgrim_1_id_type" class="special-controlled">
+                      <option value="Aadhaar">Aadhaar</option>
+                      <option value="Passport">Passport</option>
+                      <option value="Voter ID">Voter ID</option>
+                      <option value="Driving License">Driving License</option>
+                      <option value="PAN">PAN</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label for="special-p1-id-num">Photo ID Number *</label>
+                    <input type="text" id="special-p1-id-num" name="pilgrim_1_id_num" class="special-controlled" placeholder="ID Number">
+                  </div>
+                </div>
+              </div>
+            ` : ''}
+          </div>
+
+          <div class="form-section">
+            <h3>Step 3: Document Uploads (&lt; 1 MB Strict Size Check)</h3>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="special-aadhaar-doc">Primary Devotee Aadhaar / ID Proof Document *</label>
+                <input type="file" id="special-aadhaar-doc" name="aadhaar_proof_doc" accept=".pdf,.jpg,.jpeg,.png" class="special-controlled">
+                <span id="aadhaar-doc-badge" style="font-size: 11px; margin-top: 4px; color: #64748b;">Max 1024 KB (PDF, JPG, PNG)</span>
+              </div>
+
+              <div class="form-group">
+                <label for="special-cert-doc">Govt Disability / Medical / Age Certificate *</label>
+                <input type="file" id="special-cert-doc" name="category_certificate_doc" accept=".pdf,.jpg,.jpeg,.png" class="special-controlled">
+                <span id="cert-doc-badge" style="font-size: 11px; margin-top: 4px; color: #64748b;">Max 1024 KB (PDF, JPG, PNG)</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 20px;">
+            <button type="button" class="btn-sec" id="btn-special-back">
+              ◀ Back to Step 1
+            </button>
+            <button type="button" class="btn-submit" id="btn-special-confirm">
+              Confirm & Proceed to Special Darshan
+            </button>
+          </div>
+        `;
+
+        // Back button
+        page2.querySelector('#btn-special-back')?.addEventListener('click', () => {
+          page2.style.display = 'none';
+          if (page1) page1.style.display = 'block';
+        });
+
+        // Confirm button
+        page2.querySelector('#btn-special-confirm')?.addEventListener('click', () => {
+          alert('🎉 Special Darshan (2-Page SPA) validated and submitted successfully!');
+        });
+
+        // Strict < 1 MB file upload checks
+        const aadhaarInput = page2.querySelector('#special-aadhaar-doc') as HTMLInputElement | null;
+        const aadhaarBadge = page2.querySelector('#aadhaar-doc-badge') as HTMLElement | null;
+        aadhaarInput?.addEventListener('change', () => {
+          const file = aadhaarInput.files?.[0];
+          if (file && aadhaarBadge) {
+            if (file.size > 1048576) {
+              aadhaarInput.value = '';
+              aadhaarBadge.textContent = `❌ File size exceeds 1 MB limit (${(file.size / 1024).toFixed(0)} KB / 1024 KB max)!`;
+              aadhaarBadge.style.color = '#dc2626';
+            } else {
+              aadhaarBadge.textContent = `✓ Attached: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+              aadhaarBadge.style.color = '#16a34a';
+            }
+          }
+        });
+
+        const certInput = page2.querySelector('#special-cert-doc') as HTMLInputElement | null;
+        const certBadge = page2.querySelector('#cert-doc-badge') as HTMLElement | null;
+        certInput?.addEventListener('change', () => {
+          const file = certInput.files?.[0];
+          if (file && certBadge) {
+            if (file.size > 1048576) {
+              certInput.value = '';
+              certBadge.textContent = `❌ File size exceeds 1 MB limit (${(file.size / 1024).toFixed(0)} KB / 1024 KB max)!`;
+              certBadge.style.color = '#dc2626';
+            } else {
+              certBadge.textContent = `✓ Attached: ${file.name} (${Math.round(file.size / 1024)} KB)`;
+              certBadge.style.color = '#16a34a';
+            }
+          }
+        });
+      }
     });
   </script>
 </body>

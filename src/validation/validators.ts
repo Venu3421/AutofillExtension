@@ -233,6 +233,63 @@ export function checkTicketCountMismatch(detectedCount: number, includedPilgrimC
   return { mismatch: false, detectedCount, includedPilgrimCount };
 }
 
+export const MAX_DOC_SIZE_BYTES = 1048576; // 1 MB (1024 * 1024 bytes)
+export const ALLOWED_DOC_MIME_TYPES = ['application/pdf', 'image/jpeg', 'image/png'] as const;
+
+/**
+ * Validates document proof file (size < 1 MB, valid MIME types: PDF, JPEG, PNG).
+ */
+export function validateProofDocument(doc?: { sizeBytes: number; mimeType: string; fileName?: string }): { valid: boolean; error?: string } {
+  if (!doc) return { valid: false, error: 'Document is required' };
+  if (doc.sizeBytes >= MAX_DOC_SIZE_BYTES) {
+    const kb = (doc.sizeBytes / 1024).toFixed(0);
+    return {
+      valid: false,
+      error: `File size exceeds 1 MB limit (${kb} KB / 1024 KB max). Please compress or choose a smaller file.`
+    };
+  }
+  const allowed = ['application/pdf', 'image/jpeg', 'image/png'];
+  if (!allowed.includes(doc.mimeType)) {
+    return {
+      valid: false,
+      error: `Invalid file format "${doc.mimeType}". Only PDF, JPEG, and PNG files are accepted.`
+    };
+  }
+  return { valid: true };
+}
+
+/**
+ * Checks TTD's 90-day cooldown between special category bookings (Differently Abled, Sr. Citizen, Medical).
+ */
+export function checkSpecialDarshanCooldown(
+  lastDateStr?: string,
+  targetDate: Date = new Date()
+): {
+  inCooldown: boolean;
+  daysSince?: number;
+  remainingDays?: number;
+  message?: string;
+} {
+  if (!lastDateStr) return { inCooldown: false };
+  const lastDate = new Date(lastDateStr);
+  if (isNaN(lastDate.getTime())) return { inCooldown: false };
+
+  const diffMs = targetDate.getTime() - lastDate.getTime();
+  const daysSince = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (daysSince >= 0 && daysSince < 90) {
+    const remainingDays = 90 - daysSince;
+    return {
+      inCooldown: true,
+      daysSince,
+      remainingDays,
+      message: `TTD enforces a 90-day cooldown between special darshans. Your last booking was ${daysSince} day(s) ago (${remainingDays} day(s) remaining).`
+    };
+  }
+
+  return { inCooldown: false, daysSince };
+}
+
 export interface ReadinessReport {
   isReady: boolean;
   includedCount: number;
@@ -265,6 +322,17 @@ export function evaluateBookingReadiness(profile: Profile): ReadinessReport {
     warnings.push('Arjitha Seva / Electronic DIP allows maximum 2 pilgrims per application.');
   } else if (preset === 'accommodation' && included.length < 2) {
     warnings.push('TTD Accommodation requires minimum 2 occupants per room.');
+  } else if (preset === 'SPECIAL_DISABILITY_AGED') {
+    if (included.length > 2) {
+      generalErrors.push('Differently Abled / Sr. Citizen / Medical booking allows maximum 2 persons (1 Primary + 1 Attendant).');
+    }
+    const reqAttendant = profile.attendantConfig?.requiresAttendant;
+    if (reqAttendant && included.length < 2) {
+      warnings.push('Companion attendant is enabled, but only 1 person is selected. Please select an attendant or uncheck attendant option.');
+    }
+    if (reqAttendant && profile.attendantConfig?.companionRelationship && profile.attendantConfig.companionRelationship !== 'Spouse') {
+      warnings.push("TTD's official rule allows Only Spouse as attendant (exceptions apply only to severe illness/mental disability or 80+ cases with prior verification).");
+    }
   }
 
   // Validate each included pilgrim
@@ -290,6 +358,57 @@ export function evaluateBookingReadiness(profile: Profile): ReadinessReport {
 
     if (preset === 'homam' && (!p.gothram || !p.gothram.trim())) {
       warnings.push(`Pilgrim ${i + 1} (${p.fullName || 'Unnamed'}): Gothram is recommended for Sri Srinivasa Divyanugraha Homam`);
+    }
+
+    if (preset === 'SPECIAL_DISABILITY_AGED' && i === 0) {
+      // Primary pilgrim special category validation
+      if (p.specialCategory === 'Senior Citizen') {
+        if (typeof p.age === 'number' && p.age < 65) {
+          errors.push(`Senior Citizen category requires age 65 or above (currently ${p.age})`);
+        }
+        if (!p.proofDocuments?.idProofDoc) {
+          warnings.push('Age Proof document (< 1 MB) is required for Senior Citizen verification.');
+        }
+      } else if (p.specialCategory === 'Differently Abled') {
+        if (!p.disabilityType) {
+          errors.push('Disability Type is required for Differently Abled category');
+        }
+        if (typeof p.disabilityPercentage === 'number' && p.disabilityPercentage <= 20) {
+          warnings.push('Many TTD guides cite >20% disability; verify against your Govt certificate.');
+        }
+        if (!p.proofDocuments?.categoryCertificateDoc) {
+          warnings.push('Govt Disability Certificate / UDID card (< 1 MB) is required.');
+        }
+      } else if (p.specialCategory === 'Medical Cases') {
+        if (!p.medicalCondition) {
+          errors.push('Medical Condition is required for Medical Cases category');
+        }
+        if (!p.proofDocuments?.categoryCertificateDoc) {
+          warnings.push('Hospital / Surgical discharge summary or certificate (< 1 MB) is required.');
+        }
+      }
+
+      // Check document sizes and formats if provided
+      if (p.proofDocuments?.idProofDoc) {
+        const docCheck = validateProofDocument(p.proofDocuments.idProofDoc);
+        if (!docCheck.valid && docCheck.error) {
+          errors.push(`ID Proof: ${docCheck.error}`);
+        }
+      }
+      if (p.proofDocuments?.categoryCertificateDoc) {
+        const docCheck = validateProofDocument(p.proofDocuments.categoryCertificateDoc);
+        if (!docCheck.valid && docCheck.error) {
+          errors.push(`Category Certificate: ${docCheck.error}`);
+        }
+      }
+
+      // 90-day cooldown check
+      if (p.lastSpecialDarshanDate) {
+        const cd = checkSpecialDarshanCooldown(p.lastSpecialDarshanDate);
+        if (cd.inCooldown && cd.message) {
+          warnings.push(`Pilgrim 1 (${p.fullName || 'Primary'}): ${cd.message}`);
+        }
+      }
     }
 
     if (errors.length > 0) {

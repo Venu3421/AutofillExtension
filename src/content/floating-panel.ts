@@ -12,6 +12,15 @@ function formatFieldKeyLabel(key: string, pilgrims: Pilgrim[] = []): string {
   if (key === 'general_country') return 'General Details - Country';
   if (key === 'general_pincode') return 'General Details - Pincode';
 
+  if (key === 'special_category') return 'Special Darshan - Category';
+  if (key === 'special_disabilityType') return 'Special Darshan - Disability Type';
+  if (key === 'special_disabilityPercentage') return 'Special Darshan - Disability %';
+  if (key === 'special_medicalCondition') return 'Special Darshan - Medical Condition';
+  if (key === 'special_certificateOrUdidNumber') return 'Special Darshan - Certificate / UDID No';
+  if (key === 'special_attendantRequired') return 'Special Darshan - Attendant Required (Yes/No)';
+  if (key === 'doc_id_proof') return 'Devotee 1 - ID Proof Document Upload (<1MB)';
+  if (key === 'doc_category_cert') return 'Devotee 1 - Certificate Document Upload (<1MB)';
+
   const match = key.match(/^pilgrim_(\d+)_(.+)$/);
   if (match) {
     const idx = parseInt(match[1], 10);
@@ -22,6 +31,7 @@ function formatFieldKeyLabel(key: string, pilgrims: Pilgrim[] = []): string {
     switch (field) {
       case 'fullName': return `Devotee ${devoteeNum}${pilgrimName} - Full Name`;
       case 'age': return `Devotee ${devoteeNum} - Age`;
+      case 'dob': return `Devotee ${devoteeNum} - Date of Birth`;
       case 'gender': return `Devotee ${devoteeNum} - Gender`;
       case 'idProofType': return `Devotee ${devoteeNum} - Photo ID Proof`;
       case 'idNumber': return `Devotee ${devoteeNum} - Photo ID Number`;
@@ -636,11 +646,24 @@ export class FloatingPanel {
                 <div class="mapping-pills">
                   <button type="button" class="pill-target ${this.selectedMappingKey === `pilgrim_${idx}_fullName` ? 'active' : ''}" data-key="pilgrim_${idx}_fullName">Name</button>
                   <button type="button" class="pill-target ${this.selectedMappingKey === `pilgrim_${idx}_age` ? 'active' : ''}" data-key="pilgrim_${idx}_age">Age</button>
+                  <button type="button" class="pill-target ${this.selectedMappingKey === `pilgrim_${idx}_dob` ? 'active' : ''}" data-key="pilgrim_${idx}_dob">DOB</button>
                   <button type="button" class="pill-target ${this.selectedMappingKey === `pilgrim_${idx}_gender` ? 'active' : ''}" data-key="pilgrim_${idx}_gender">Gender</button>
                   <button type="button" class="pill-target ${this.selectedMappingKey === `pilgrim_${idx}_idProofType` ? 'active' : ''}" data-key="pilgrim_${idx}_idProofType">ID Proof</button>
                   <button type="button" class="pill-target ${this.selectedMappingKey === `pilgrim_${idx}_idNumber` ? 'active' : ''}" data-key="pilgrim_${idx}_idNumber">ID Number</button>
                 </div>
               `).join('')}
+
+              <div class="mapping-section-label">Special Darshan & Documents:</div>
+              <div class="mapping-pills">
+                <button type="button" class="pill-target ${this.selectedMappingKey === 'special_category' ? 'active' : ''}" data-key="special_category">Category</button>
+                <button type="button" class="pill-target ${this.selectedMappingKey === 'special_attendantRequired' ? 'active' : ''}" data-key="special_attendantRequired">Attendant Yes/No</button>
+                <button type="button" class="pill-target ${this.selectedMappingKey === 'special_disabilityType' ? 'active' : ''}" data-key="special_disabilityType">Disability Type</button>
+                <button type="button" class="pill-target ${this.selectedMappingKey === 'special_disabilityPercentage' ? 'active' : ''}" data-key="special_disabilityPercentage">Disability %</button>
+                <button type="button" class="pill-target ${this.selectedMappingKey === 'special_medicalCondition' ? 'active' : ''}" data-key="special_medicalCondition">Medical Condition</button>
+                <button type="button" class="pill-target ${this.selectedMappingKey === 'special_certificateOrUdidNumber' ? 'active' : ''}" data-key="special_certificateOrUdidNumber">UDID / Cert No</button>
+                <button type="button" class="pill-target ${this.selectedMappingKey === 'doc_id_proof' ? 'active' : ''}" data-key="doc_id_proof">Aadhaar Doc Upload</button>
+                <button type="button" class="pill-target ${this.selectedMappingKey === 'doc_category_cert' ? 'active' : ''}" data-key="doc_category_cert">Certificate Doc Upload</button>
+              </div>
 
               <div class="mapping-section-label">General Details:</div>
               <div class="mapping-pills">
@@ -664,6 +687,24 @@ export class FloatingPanel {
 
           <!-- Post-Fill Audit Tray -->
           <div id="audit-tray"></div>
+
+          ${(this.activeProfile?.pilgrims[0]?.proofDocuments?.idProofDoc || this.activeProfile?.pilgrims[0]?.proofDocuments?.categoryCertificateDoc) ? `
+            <div style="margin-top: 8px; padding-top: 6px; border-top: 1px dashed ${isDark ? '#334155' : '#cbd5e1'};">
+              <div style="font-size: 10px; font-weight: 700; color: #64748b; margin-bottom: 4px;">💾 READY &lt;1MB DOCUMENTS (CLICK TO DOWNLOAD / DRAG):</div>
+              <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                ${this.activeProfile.pilgrims[0].proofDocuments.idProofDoc ? `
+                  <button type="button" class="btn-sub btn-download-proof-doc" data-doc="idProof" title="Download ${this.activeProfile.pilgrims[0].proofDocuments.idProofDoc.fileName}">
+                    📥 ${this.activeProfile.pilgrims[0].proofDocuments.idProofDoc.fileName} (${Math.round(this.activeProfile.pilgrims[0].proofDocuments.idProofDoc.sizeBytes / 1024)} KB)
+                  </button>
+                ` : ''}
+                ${this.activeProfile.pilgrims[0].proofDocuments.categoryCertificateDoc ? `
+                  <button type="button" class="btn-sub btn-download-proof-doc" data-doc="categoryCert" title="Download ${this.activeProfile.pilgrims[0].proofDocuments.categoryCertificateDoc.fileName}">
+                    📥 ${this.activeProfile.pilgrims[0].proofDocuments.categoryCertificateDoc.fileName} (${Math.round(this.activeProfile.pilgrims[0].proofDocuments.categoryCertificateDoc.sizeBytes / 1024)} KB)
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+          ` : ''}
         </div>
       </div>
     `;
@@ -742,6 +783,31 @@ export class FloatingPanel {
         if (targetNameEl && this.activeProfile) {
           targetNameEl.textContent = formatFieldKeyLabel(key, this.activeProfile.pilgrims.filter(p => p.included));
         }
+      });
+    });
+
+    // Proof Document One-Click Download Handlers
+    this.shadow.querySelectorAll<HTMLButtonElement>('.btn-download-proof-doc').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        const docType = btn.getAttribute('data-doc');
+        const doc = docType === 'idProof'
+          ? this.activeProfile?.pilgrims[0]?.proofDocuments?.idProofDoc
+          : this.activeProfile?.pilgrims[0]?.proofDocuments?.categoryCertificateDoc;
+        if (!doc) return;
+        const cleanBase64 = doc.base64Data.includes(',') ? doc.base64Data.split(',')[1] : doc.base64Data;
+        const byteChars = atob(cleanBase64);
+        const byteArrays = new Uint8Array(byteChars.length);
+        for (let i = 0; i < byteChars.length; i++) {
+          byteArrays[i] = byteChars.charCodeAt(i);
+        }
+        const blob = new Blob([byteArrays], { type: doc.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = doc.fileName;
+        a.click();
+        URL.revokeObjectURL(url);
       });
     });
   }
@@ -978,6 +1044,14 @@ export class FloatingPanel {
       e.preventDefault();
       e.stopPropagation();
 
+      // Check if clicked element or any ancestor is a control/dropdown trigger
+      const directOrAncestor = target.closest<HTMLElement>(
+        'input, select, textarea, mat-select, [role="combobox"], [role="button"], button, [aria-haspopup], .MuiSelect-select, div[class*="select" i], div[tabindex]'
+      );
+      if (directOrAncestor && directOrAncestor !== document.body && directOrAncestor !== document.documentElement) {
+        target = directOrAncestor;
+      }
+
       // Allow inputs, selects, textareas, mat-selects, comboboxes, buttons, and custom div dropdown triggers
       let isControl = target instanceof HTMLInputElement ||
                       target instanceof HTMLSelectElement ||
@@ -989,12 +1063,13 @@ export class FloatingPanel {
                       target.hasAttribute('aria-haspopup') ||
                       target.classList.contains('MuiSelect-select') ||
                       target.classList.contains('ant-select-selector') ||
-                      (target.matches && target.matches('div[class*="select" i]'));
+                      (target.matches && target.matches('div[class*="select" i]')) ||
+                      target.getAttribute('tabindex') !== null;
 
       if (!isControl) {
         // Try finding an input or dropdown trigger inside the clicked element (e.g. clicked mat-form-field or wrapper)
         const nestedInput = target.querySelector<HTMLElement>(
-          'input, select, textarea, mat-select, [role="combobox"], [role="button"], button, [aria-haspopup], div[class*="select" i]'
+          'input:not([type="hidden"]), select, textarea, mat-select, [role="combobox"], [role="button"], button, [aria-haspopup], .MuiSelect-select, div[class*="select" i], div[tabindex]'
         );
         if (nestedInput) {
           target = nestedInput;
@@ -1002,7 +1077,7 @@ export class FloatingPanel {
         } else {
           // Also try checking parent element in case user clicked an icon or label
           const parentControl = target.parentElement?.querySelector<HTMLElement>(
-            'input, select, textarea, mat-select, [role="combobox"], [role="button"], button, [aria-haspopup], div[class*="select" i]'
+            'input:not([type="hidden"]), select, textarea, mat-select, [role="combobox"], [role="button"], button, [aria-haspopup], .MuiSelect-select, div[class*="select" i], div[tabindex]'
           );
           if (parentControl) {
             target = parentControl;

@@ -22,7 +22,8 @@
   },
   "permissions": [
     "storage",
-    "clipboardWrite"
+    "clipboardWrite",
+    "unlimitedStorage"
   ],
   "host_permissions": [
     "*://ttdevasthanams.ap.gov.in/*",
