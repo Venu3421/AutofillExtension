@@ -71,13 +71,14 @@ export class FloatingPanel {
 
     this.host = document.createElement('pilgrim-quickfill-root');
     this.host.id = 'pilgrim-quickfill-extension-host';
-    this.host.style.setProperty('all', 'initial', 'important');
     this.host.style.setProperty('position', 'fixed', 'important');
     this.host.style.setProperty('bottom', '20px', 'important');
     this.host.style.setProperty('right', '20px', 'important');
     this.host.style.setProperty('z-index', '2147483647', 'important');
     this.host.style.setProperty('display', 'block', 'important');
     this.host.style.setProperty('pointer-events', 'auto', 'important');
+    this.host.style.setProperty('margin', '0', 'important');
+    this.host.style.setProperty('padding', '0', 'important');
     this.host.style.setProperty('font-family', 'system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif', 'important');
 
     this.shadow = this.host.attachShadow({ mode: 'open' });
@@ -86,13 +87,31 @@ export class FloatingPanel {
       targetParent.appendChild(this.host);
     }
 
-    // Restore any previously dragged position within the session
+    // Restore any previously dragged position within the session (with bounds validation)
     try {
       const savedPos = sessionStorage.getItem('pilgrim_quickfill_pos');
       if (savedPos) {
-        this.customPosition = JSON.parse(savedPos);
+        const parsed = JSON.parse(savedPos);
+        if (
+          parsed &&
+          typeof parsed.top === 'number' &&
+          !isNaN(parsed.top) &&
+          typeof parsed.left === 'number' &&
+          !isNaN(parsed.left) &&
+          parsed.top >= 0 &&
+          parsed.top < (window.innerHeight || 800) - 50 &&
+          parsed.left >= 0 &&
+          parsed.left < (window.innerWidth || 1200) - 50
+        ) {
+          this.customPosition = parsed;
+        } else {
+          sessionStorage.removeItem('pilgrim_quickfill_pos');
+          this.customPosition = null;
+        }
       }
-    } catch (e) {}
+    } catch (e) {
+      this.customPosition = null;
+    }
 
     this.applyPosition();
     this.render();
@@ -102,7 +121,13 @@ export class FloatingPanel {
 
   private applyPosition(): void {
     if (!this.host) return;
-    if (this.customPosition) {
+    if (
+      this.customPosition &&
+      typeof this.customPosition.top === 'number' &&
+      !isNaN(this.customPosition.top) &&
+      typeof this.customPosition.left === 'number' &&
+      !isNaN(this.customPosition.left)
+    ) {
       this.host.style.setProperty('top', `${this.customPosition.top}px`, 'important');
       this.host.style.setProperty('left', `${this.customPosition.left}px`, 'important');
       this.host.style.setProperty('bottom', 'auto', 'important');
@@ -256,13 +281,16 @@ export class FloatingPanel {
     this.shadow.innerHTML = `
       <style>
         :host {
-          all: initial !important;
           position: fixed !important;
+          bottom: 20px;
+          right: 20px;
           z-index: 2147483647 !important;
           display: block !important;
           pointer-events: auto !important;
           font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
           touch-action: none !important;
+          margin: 0 !important;
+          padding: 0 !important;
         }
         .panel {
           width: 320px;

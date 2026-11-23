@@ -158,7 +158,7 @@ export function findControlsForLabels(pattern: RegExp): HTMLElement[] {
   const claimed = new Set<HTMLElement>();
 
   const candidateLabels = Array.from(document.querySelectorAll<HTMLElement>(
-    'label, [class*="label" i], mat-label, span, div, p, th'
+    'label, [class*="label" i], mat-label, .title, th, [data-placeholder], [data-label]'
   )).filter(isElementVisible);
 
   for (const lbl of candidateLabels) {
